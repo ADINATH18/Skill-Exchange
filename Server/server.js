@@ -98,8 +98,8 @@ io.on('connection', (socket) => {
 
         const existingUsers = room
             ? Array.from(room).filter(
-                  (id) => id !== socket.id
-              )
+                (id) => id !== socket.id
+            )
             : [];
 
         socket.emit(
@@ -213,10 +213,11 @@ const startServer = async () => {
         await initializeDB();
 
     if (dbInitialized) {
-        const PORT = 1337;
+        const PORT = process.env.PORT || 1337;
 
         httpServer.listen(
             PORT,
+            '0.0.0.0',
             () => {
                 console.log(
                     `Server is running on port ${PORT}`
