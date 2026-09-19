@@ -1,15 +1,26 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { FaEnvelope, FaLock, FaSignInAlt, FaUserPlus } from 'react-icons/fa';
+import {
+    FaEnvelope,
+    FaLock,
+    FaSignInAlt,
+    FaUserPlus
+} from 'react-icons/fa';
 
 const Login = () => {
+    const API_URL =
+        import.meta.env.VITE_API_URL ||
+        'http://localhost:1337';
+
     const [formData, setFormData] = useState({
         email: '',
         password: ''
     });
+
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
     const navigate = useNavigate();
 
     const handleChange = (e) => {
@@ -17,21 +28,39 @@ const Login = () => {
             ...formData,
             [e.target.name]: e.target.value
         });
-        setError(''); // Clear error when user types
+
+        setError('');
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
         setLoading(true);
         setError('');
-        
+
         try {
-            const response = await axios.post('http://localhost:1337/api/auth/login', formData);
-            localStorage.setItem('token', response.data.token);
-            localStorage.setItem('userName', response.data.name);
+            const response = await axios.post(
+                `${API_URL}/api/auth/login`,
+                formData
+            );
+
+            localStorage.setItem(
+                'token',
+                response.data.token
+            );
+
+            localStorage.setItem(
+                'userName',
+                response.data.name
+            );
+
             navigate('/dashboard');
+
         } catch (error) {
-            setError(error.response?.data?.message || 'Login failed');
+            setError(
+                error.response?.data?.message ||
+                'Login failed'
+            );
         } finally {
             setLoading(false);
         }
@@ -39,7 +68,9 @@ const Login = () => {
 
     return (
         <div className="auth-container">
+
             <div className="auth-card">
+
                 <div className="auth-header">
                     <h2>Welcome Back!</h2>
                     <p>Please sign in to continue</p>
@@ -47,16 +78,21 @@ const Login = () => {
 
                 {error && (
                     <div className="alert alert-danger d-flex align-items-center">
-                        <FaSignInAlt className="me-2" /> {error}
+                        <FaSignInAlt className="me-2" />
+                        {error}
                     </div>
                 )}
 
                 <form onSubmit={handleSubmit}>
+
                     <div className="form-group">
+
                         <div className="input-group">
+
                             <span className="input-group-text">
                                 <FaEnvelope />
                             </span>
+
                             <input
                                 type="email"
                                 className="form-control"
@@ -66,14 +102,19 @@ const Login = () => {
                                 onChange={handleChange}
                                 required
                             />
+
                         </div>
+
                     </div>
 
                     <div className="form-group">
+
                         <div className="input-group">
+
                             <span className="input-group-text">
                                 <FaLock />
                             </span>
+
                             <input
                                 type="password"
                                 className="form-control"
@@ -83,33 +124,52 @@ const Login = () => {
                                 onChange={handleChange}
                                 required
                             />
+
                         </div>
+
                     </div>
 
-                    <button 
-                        type="submit" 
-                        className="btn btn-primary w-100" 
+                    <button
+                        type="submit"
+                        className="btn btn-primary w-100"
                         disabled={loading}
                     >
+
                         {loading ? (
                             <>
-                                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <span
+                                    className="spinner-border spinner-border-sm me-2"
+                                    role="status"
+                                    aria-hidden="true"
+                                ></span>
+
                                 Signing in...
                             </>
                         ) : (
                             <>
-                                <FaSignInAlt className="me-2" /> Sign In
+                                <FaSignInAlt className="me-2" />
+                                Sign In
                             </>
                         )}
+
                     </button>
+
                 </form>
 
                 <div className="auth-footer">
+
                     <p>Don't have an account?</p>
-                    <Link to="/register" className="btn btn-outline-primary">
-                        <FaUserPlus className="me-2" /> Create Account
+
+                    <Link
+                        to="/register"
+                        className="btn btn-outline-primary"
+                    >
+                        <FaUserPlus className="me-2" />
+                        Create Account
                     </Link>
+
                 </div>
+
             </div>
 
             <style jsx>{`
@@ -118,7 +178,11 @@ const Login = () => {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                    background: linear-gradient(
+                        135deg,
+                        #f5f7fa 0%,
+                        #c3cfe2 100%
+                    );
                     padding: 20px;
                 }
 
@@ -179,7 +243,11 @@ const Login = () => {
                     font-weight: 600;
                     text-transform: uppercase;
                     letter-spacing: 0.5px;
-                    background: linear-gradient(to right, #4776E6, #8E54E9);
+                    background: linear-gradient(
+                        to right,
+                        #4776E6,
+                        #8E54E9
+                    );
                     border: none;
                     transition: all 0.3s ease;
                 }
@@ -190,7 +258,11 @@ const Login = () => {
                 }
 
                 .btn-primary:disabled {
-                    background: linear-gradient(to right, #4776E6, #8E54E9);
+                    background: linear-gradient(
+                        to right,
+                        #4776E6,
+                        #8E54E9
+                    );
                     opacity: 0.7;
                 }
 
@@ -215,7 +287,11 @@ const Login = () => {
                 }
 
                 .btn-outline-primary:hover {
-                    background: linear-gradient(to right, #4776E6, #8E54E9);
+                    background: linear-gradient(
+                        to right,
+                        #4776E6,
+                        #8E54E9
+                    );
                     border-color: transparent;
                     color: white;
                     transform: translateY(-1px);
@@ -227,8 +303,9 @@ const Login = () => {
                     }
                 }
             `}</style>
+
         </div>
     );
 };
 
-export default Login; 
+export default Login;
