@@ -3,12 +3,17 @@ import axios from 'axios';
 import { Modal, Button, Form } from 'react-bootstrap';
 
 const CreateCourseModal = ({ show, onHide, onCourseCreated }) => {
+    const API_URL =
+        import.meta.env.VITE_API_URL ||
+        'http://localhost:1337';
+
     const [formData, setFormData] = useState({
         name: '',
         skills: '',
         duration: '',
         imageUrl: ''
     });
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -21,50 +26,78 @@ const CreateCourseModal = ({ show, onHide, onCourseCreated }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
         setLoading(true);
         setError('');
 
         try {
             const token = localStorage.getItem('token');
-            const skills = formData.skills.split(',').map(skill => skill.trim());
+
+            const skills = formData.skills
+                .split(',')
+                .map((skill) => skill.trim());
 
             await axios.post(
-                'http://localhost:1337/api/courses/create',
+                `${API_URL}/api/courses/create`,
                 {
                     ...formData,
                     skills,
                     duration: parseInt(formData.duration)
                 },
                 {
-                    headers: { Authorization: `Bearer ${token}` }
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
                 }
             );
 
             onCourseCreated();
             onHide();
+
             setFormData({
                 name: '',
                 skills: '',
                 duration: '',
                 imageUrl: ''
             });
+
         } catch (error) {
-            setError(error.response?.data?.message || 'Error creating course');
+            setError(
+                error.response?.data?.message ||
+                'Error creating course'
+            );
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <Modal show={show} onHide={onHide} centered>
+        <Modal
+            show={show}
+            onHide={onHide}
+            centered
+        >
             <Modal.Header closeButton>
-                <Modal.Title>Create New Course</Modal.Title>
+                <Modal.Title>
+                    Create New Course
+                </Modal.Title>
             </Modal.Header>
+
             <Modal.Body>
-                {error && <div className="alert alert-danger">{error}</div>}
+
+                {error && (
+                    <div className="alert alert-danger">
+                        {error}
+                    </div>
+                )}
+
                 <Form onSubmit={handleSubmit}>
+
                     <Form.Group className="mb-3">
-                        <Form.Label>Course Name</Form.Label>
+                        <Form.Label>
+                            Course Name
+                        </Form.Label>
+
                         <Form.Control
                             type="text"
                             name="name"
@@ -75,7 +108,10 @@ const CreateCourseModal = ({ show, onHide, onCourseCreated }) => {
                     </Form.Group>
 
                     <Form.Group className="mb-3">
-                        <Form.Label>Skills (comma-separated)</Form.Label>
+                        <Form.Label>
+                            Skills (comma-separated)
+                        </Form.Label>
+
                         <Form.Control
                             type="text"
                             name="skills"
@@ -87,7 +123,10 @@ const CreateCourseModal = ({ show, onHide, onCourseCreated }) => {
                     </Form.Group>
 
                     <Form.Group className="mb-3">
-                        <Form.Label>Duration (weeks)</Form.Label>
+                        <Form.Label>
+                            Duration (weeks)
+                        </Form.Label>
+
                         <Form.Control
                             type="number"
                             name="duration"
@@ -99,7 +138,10 @@ const CreateCourseModal = ({ show, onHide, onCourseCreated }) => {
                     </Form.Group>
 
                     <Form.Group className="mb-3">
-                        <Form.Label>Image URL</Form.Label>
+                        <Form.Label>
+                            Image URL
+                        </Form.Label>
+
                         <Form.Control
                             type="url"
                             name="imageUrl"
@@ -111,21 +153,32 @@ const CreateCourseModal = ({ show, onHide, onCourseCreated }) => {
                     </Form.Group>
 
                     <div className="d-flex justify-content-end">
-                        <Button variant="secondary" onClick={onHide} className="me-2">
+
+                        <Button
+                            variant="secondary"
+                            onClick={onHide}
+                            className="me-2"
+                        >
                             Cancel
                         </Button>
-                        <Button 
-                            variant="primary" 
+
+                        <Button
+                            variant="primary"
                             type="submit"
                             disabled={loading}
                         >
-                            {loading ? 'Creating...' : 'Create Course'}
+                            {loading
+                                ? 'Creating...'
+                                : 'Create Course'}
                         </Button>
+
                     </div>
+
                 </Form>
+
             </Modal.Body>
         </Modal>
     );
 };
 
-export default CreateCourseModal; 
+export default CreateCourseModal;
