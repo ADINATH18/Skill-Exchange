@@ -14,6 +14,10 @@ const Register = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
+    const API_URL =
+        import.meta.env.VITE_API_URL ||
+        'http://localhost:1337';
+
     const validateForm = () => {
         const newErrors = {};
         
@@ -49,6 +53,7 @@ const Register = () => {
             ...prev,
             [name]: value
         }));
+
         // Clear error when user starts typing
         if (errors[name]) {
             setErrors(prev => ({
@@ -56,6 +61,7 @@ const Register = () => {
                 [name]: ''
             }));
         }
+
         setSubmitError('');
     };
 
@@ -71,14 +77,18 @@ const Register = () => {
 
         try {
             const response = await axios.post(
-                'http://localhost:1337/api/auth/register',
+                `${API_URL}/api/auth/register`,
                 formData
             );
+
             localStorage.setItem('token', response.data.token);
             localStorage.setItem('userName', response.data.name);
+
             navigate('/dashboard');
         } catch (error) {
-            setSubmitError(error.response?.data?.message || 'Registration failed');
+            setSubmitError(
+                error.response?.data?.message || 'Registration failed'
+            );
         } finally {
             setLoading(false);
         }
@@ -113,8 +123,11 @@ const Register = () => {
                                 onChange={handleChange}
                             />
                         </div>
+
                         {errors.name && (
-                            <div className="invalid-feedback d-block">{errors.name}</div>
+                            <div className="invalid-feedback d-block">
+                                {errors.name}
+                            </div>
                         )}
                     </div>
 
@@ -132,8 +145,11 @@ const Register = () => {
                                 onChange={handleChange}
                             />
                         </div>
+
                         {errors.email && (
-                            <div className="invalid-feedback d-block">{errors.email}</div>
+                            <div className="invalid-feedback d-block">
+                                {errors.email}
+                            </div>
                         )}
                     </div>
 
@@ -151,19 +167,26 @@ const Register = () => {
                                 onChange={handleChange}
                             />
                         </div>
+
                         {errors.password && (
-                            <div className="invalid-feedback d-block">{errors.password}</div>
+                            <div className="invalid-feedback d-block">
+                                {errors.password}
+                            </div>
                         )}
                     </div>
 
-                    <button 
-                        type="submit" 
+                    <button
+                        type="submit"
                         className="btn btn-primary w-100"
                         disabled={loading}
                     >
                         {loading ? (
                             <>
-                                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                <span
+                                    className="spinner-border spinner-border-sm me-2"
+                                    role="status"
+                                    aria-hidden="true"
+                                ></span>
                                 Creating Account...
                             </>
                         ) : (
@@ -176,6 +199,7 @@ const Register = () => {
 
                 <div className="auth-footer">
                     <p>Already have an account?</p>
+
                     <Link to="/login" className="btn btn-outline-primary">
                         <FaSignInAlt className="me-2" /> Sign In
                     </Link>
@@ -312,4 +336,4 @@ const Register = () => {
     );
 };
 
-export default Register; 
+export default Register;
