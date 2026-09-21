@@ -1,5 +1,6 @@
 import express from 'express';
 import Course from '../models/Course.js';
+import User from '../models/User.js';
 import Chat from '../models/Chat.js';
 import { verifyToken } from '../middleware/auth.js';
 
@@ -92,9 +93,14 @@ router.post('/enroll/:courseId', verifyToken, async (req, res) => {
             });
         }
 
+        if (!course.enrollments) {
+            course.enrollments = [];
+        }
+
         const existingEnrollment =
             course.enrollments.find(
                 enrollment =>
+                    enrollment.student &&
                     enrollment.student.toString() ===
                     req.user._id.toString()
             );
@@ -188,8 +194,9 @@ router.put(
             }
 
             const enrollment =
-                course.enrollments.find(
+                (course.enrollments || []).find(
                     enrollment =>
+                        enrollment.student &&
                         enrollment.student.toString() ===
                         req.params.studentId
                 );
@@ -326,8 +333,9 @@ router.delete(
             }
 
             const enrollment =
-                course.enrollments.find(
+                (course.enrollments || []).find(
                     enrollment =>
+                        enrollment.student &&
                         enrollment.student.toString() ===
                         studentId
                 );
@@ -340,8 +348,9 @@ router.delete(
             }
 
             course.enrollments =
-                course.enrollments.filter(
+                (course.enrollments || []).filter(
                     enrollment =>
+                        enrollment.student &&
                         enrollment.student.toString() !==
                         studentId
                 );
@@ -470,8 +479,9 @@ router.get(
 
             for (const course of courses) {
                 const enrollment =
-                    course.enrollments.find(
+                    (course.enrollments || []).find(
                         item =>
+                            item.student &&
                             item.student.toString() ===
                             req.user._id.toString()
                     );

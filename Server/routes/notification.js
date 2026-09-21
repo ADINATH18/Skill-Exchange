@@ -1,5 +1,6 @@
 import express from 'express';
 import Course from '../models/Course.js';
+import User from '../models/User.js';
 import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -20,24 +21,31 @@ router.get('/', verifyToken, async (req, res) => {
             });
 
         teachingCourses.forEach(course => {
-            course.enrollments
+            (course.enrollments || [])
                 .filter(
                     enrollment =>
                         enrollment.status === 'pending'
                 )
                 .forEach(enrollment => {
+                    const studentId =
+                        enrollment.student?._id ||
+                        enrollment.student;
+                    const studentName =
+                        enrollment.student?.name ||
+                        enrollment.student?.email ||
+                        'A student';
+
                     notifications.push({
                         _id: `${course._id}-${enrollment._id}`,
                         type: 'primary',
                         title: 'New enrollment request',
-                        message:
-                            `${enrollment.student?.name ||
-                                enrollment.student?.email ||
-                                'A student'} requested to join ${course.name}.`,
+                        message: `${studentName} requested to join ${course.name}.`,
                         courseId: course._id,
-                        studentId:
-                            enrollment.student?._id ||
-                            enrollment.student
+                        courseName: course.name,
+                        studentId: studentId,
+                        studentName: studentName,
+                        studentEmail: enrollment.student?.email || '',
+                        isEnrollmentRequest: true
                     });
                 });
         });
@@ -49,12 +57,11 @@ router.get('/', verifyToken, async (req, res) => {
         });
 
         studentCourses.forEach(course => {
-            const enrollment =
-                course.enrollments.find(
-                    item =>
-                        item.student.toString() ===
-                        req.user._id.toString()
-                );
+            const enrollment = (course.enrollments || []).find(
+                item =>
+                    item.student &&
+                    item.student.toString() === req.user._id.toString()
+            );
 
             if (!enrollment) {
                 return;

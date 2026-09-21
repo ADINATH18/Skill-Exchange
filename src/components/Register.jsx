@@ -83,6 +83,9 @@ const Register = () => {
 
             localStorage.setItem('token', response.data.token);
             localStorage.setItem('userName', response.data.name);
+            if (response.data.userId) {
+                localStorage.setItem('userId', response.data.userId);
+            }
 
             navigate('/dashboard');
         } catch (error) {

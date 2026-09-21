@@ -16,6 +16,7 @@ const Dashboard = () => {
     const [courses, setCourses] = useState([]);
     const [myCourses, setMyCourses] = useState([]);
     const [enrolledCourses, setEnrolledCourses] = useState([]);
+    const [myRequests, setMyRequests] = useState([]);
     const [loading, setLoading] = useState(true);
     const token = localStorage.getItem('token');
     const [showFilters, setShowFilters] = useState(false);
@@ -30,6 +31,17 @@ const Dashboard = () => {
         totalStudents: 0,
         averageRating: 0
     });
+
+    const getCurrentUserId = () => {
+        try {
+            if (!token) return localStorage.getItem('userId');
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload._id || payload.userId || localStorage.getItem('userId');
+        } catch {
+            return localStorage.getItem('userId');
+        }
+    };
+    const currentUserId = getCurrentUserId();
 
     useEffect(() => {
         if (!token) {
@@ -57,7 +69,7 @@ const Dashboard = () => {
 
     const fetchCourses = async () => {
         try {
-            const [coursesRes, myCoursesRes, enrolledRes] = await Promise.all([
+            const [coursesRes, myCoursesRes, enrolledRes, myRequestsRes] = await Promise.all([
                 axios.get(`${API_URL}/api/courses/search`, {
                     params: { skill: searchSkill },
                     headers: { Authorization: `Bearer ${token}` }
@@ -67,18 +79,38 @@ const Dashboard = () => {
                 }),
                 axios.get(`${API_URL}/api/courses/enrolled`, {
                     headers: { Authorization: `Bearer ${token}` }
-                })
+                }),
+                axios.get(`${API_URL}/api/courses/my-enrollment-requests`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                }).catch(() => ({ data: [] }))
             ]);
 
-            setCourses(coursesRes.data);
-            setMyCourses(myCoursesRes.data);
-            setEnrolledCourses(enrolledRes.data);
+            setCourses(coursesRes.data || []);
+            setMyCourses(myCoursesRes.data || []);
+            setEnrolledCourses(enrolledRes.data || []);
+            setMyRequests(myRequestsRes.data || []);
             setLoading(false);
         } catch (error) {
             console.error('Error fetching courses:', error);
             setLoading(false);
         }
     };
+
+    const allPendingRequests = (myCourses || []).reduce((acc, course) => {
+        const pending = (course.enrollments || [])
+            .filter(e => e.status === 'pending')
+            .map(e => ({
+                ...e,
+                courseId: course._id,
+                courseName: course.name,
+                courseDuration: course.duration,
+                courseImageUrl: course.imageUrl,
+                studentId: e.student?._id || e.student,
+                studentName: e.student?.name || e.student?.email || 'Student',
+                studentEmail: e.student?.email || ''
+            }));
+        return [...acc, ...pending];
+    }, []);
 
     const fetchNotifications = async () => {
         try {
@@ -103,7 +135,7 @@ const Dashboard = () => {
     };
 
     useEffect(() => {
-        const progress = enrolledCourses.reduce(
+        const progress = (enrolledCourses || []).reduce(
             (acc, course) => acc + (course.progress || 0),
             0
         );
@@ -112,13 +144,13 @@ const Dashboard = () => {
             ? Math.round(progress / enrolledCourses.length)
             : 0;
 
-        const totalStudents = myCourses.reduce(
+        const totalStudents = (myCourses || []).reduce(
             (acc, course) =>
-                acc + course.enrollments.filter(e => e.status === 'approved').length,
+                acc + (course.enrollments || []).filter(e => e.status === 'approved').length,
             0
         );
 
-        const totalRating = myCourses.reduce(
+        const totalRating = (myCourses || []).reduce(
             (acc, course) => acc + (course.rating || 0),
             0
         );
@@ -135,7 +167,7 @@ const Dashboard = () => {
     }, [enrolledCourses, myCourses]);
 
     const calculateCourseStats = () => {
-        const progress = enrolledCourses.reduce(
+        const progress = (enrolledCourses || []).reduce(
             (acc, course) => acc + (course.progress || 0),
             0
         );
@@ -144,13 +176,13 @@ const Dashboard = () => {
             ? Math.round(progress / enrolledCourses.length)
             : 0;
 
-        const totalStudents = myCourses.reduce(
+        const totalStudents = (myCourses || []).reduce(
             (acc, course) =>
-                acc + course.enrollments.filter(e => e.status === 'approved').length,
+                acc + (course.enrollments || []).filter(e => e.status === 'approved').length,
             0
         );
 
-        const totalRating = myCourses.reduce(
+        const totalRating = (myCourses || []).reduce(
             (acc, course) => acc + (course.rating || 0),
             0
         );
@@ -182,12 +214,12 @@ const Dashboard = () => {
         'Advanced'
     ];
 
-    const filteredCourses = courses.filter(course => {
-        if (!searchSkill.trim()) return false;
-
-        const matchesSkill = course.skills.some(skill =>
-            skill.toLowerCase().includes(searchSkill.toLowerCase())
-        );
+    const filteredCourses = (courses || []).filter(course => {
+        const matchesSkill =
+            !searchSkill.trim() ||
+            (course.skills || []).some(skill =>
+                skill.toLowerCase().includes(searchSkill.toLowerCase())
+            );
 
         const matchesCategory =
             selectedCategory === 'all' ||
@@ -239,7 +271,8 @@ const Dashboard = () => {
             );
 
             alert(`Enrollment ${status} successfully!`);
-            fetchCourses();
+            await fetchCourses();
+            await fetchNotifications();
         } catch (error) {
             alert(
                 error.response?.data?.message ||
@@ -267,6 +300,7 @@ const Dashboard = () => {
 
             alert('Student enrollment cancelled successfully');
             await fetchCourses();
+            await fetchNotifications();
         } catch (error) {
             console.error('Cancel enrollment error:', error);
             alert(
@@ -279,6 +313,7 @@ const Dashboard = () => {
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('userName');
+        localStorage.removeItem('userId');
         navigate('/login');
     };
 
@@ -331,31 +366,64 @@ const Dashboard = () => {
                             </button>
 
                             {showNotification && (
-                                <div className="notification-dropdown">
+                                <div className="notification-dropdown shadow-lg p-2" style={{ minWidth: '320px', maxHeight: '420px', overflowY: 'auto' }}>
+                                    <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-2 border-bottom">
+                                        <strong className="text-dark">Notifications</strong>
+                                        {notifications.length > 0 && (
+                                            <span className="badge bg-primary">{notifications.length}</span>
+                                        )}
+                                    </div>
                                     {notifications.length > 0 ? (
                                         notifications.map(notification => (
                                             <div
                                                 key={notification._id}
-                                                className="notification-item"
+                                                className="notification-item p-2 mb-2 rounded border-bottom"
                                             >
-                                                <FaLightbulb
-                                                    className={`text-${notification.type} me-2`}
-                                                />
+                                                <div className="d-flex align-items-start">
+                                                    <FaLightbulb
+                                                        className={`text-${notification.type} me-2 mt-1`}
+                                                    />
 
-                                                <div>
-                                                    <strong>
-                                                        {notification.title}
-                                                    </strong>
+                                                    <div className="flex-grow-1">
+                                                        <strong className="d-block text-dark small">
+                                                            {notification.title}
+                                                        </strong>
 
-                                                    <p className="mb-0">
-                                                        {notification.message}
-                                                    </p>
+                                                        <p className="mb-1 small text-muted">
+                                                            {notification.message}
+                                                        </p>
+
+                                                        {(notification.isEnrollmentRequest || notification.title === 'New enrollment request') && notification.courseId && notification.studentId && (
+                                                            <div className="d-flex gap-2 mt-2">
+                                                                <button
+                                                                    className="btn btn-success btn-sm py-0 px-2"
+                                                                    style={{ fontSize: '0.75rem' }}
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        await handleApproveReject(notification.courseId, notification.studentId, 'approved');
+                                                                    }}
+                                                                >
+                                                                    ✓ Accept
+                                                                </button>
+                                                                <button
+                                                                    className="btn btn-outline-danger btn-sm py-0 px-2"
+                                                                    style={{ fontSize: '0.75rem' }}
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        await handleApproveReject(notification.courseId, notification.studentId, 'rejected');
+                                                                    }}
+                                                                >
+                                                                    ✕ Reject
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="notification-item text-center">
-                                            <p className="mb-0">
+                                        <div className="notification-item text-center py-3">
+                                            <p className="mb-0 text-muted small">
                                                 No new notifications
                                             </p>
                                         </div>
@@ -444,6 +512,22 @@ const Dashboard = () => {
                                     Average Progress
                                 </div>
                             </div>
+
+                            {allPendingRequests.length > 0 && (
+                                <div
+                                    className="stat-item"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => setActiveTab('requests')}
+                                    title="Click to view pending requests"
+                                >
+                                    <div className="stat-value text-warning">
+                                        {allPendingRequests.length}
+                                    </div>
+                                    <div className="stat-label text-white fw-bold">
+                                        Pending Requests ⚡
+                                    </div>
+                                </div>
+                            )}
 
                         </div>
                     </div>
@@ -632,7 +716,7 @@ const Dashboard = () => {
                                 setActiveTab('learning')
                             }
                         >
-                            My Learning
+                            My Learning ({enrolledCourses.length})
                         </button>
 
                         <button
@@ -645,8 +729,26 @@ const Dashboard = () => {
                                 setActiveTab('teaching')
                             }
                         >
-                            Teaching
+                            Teaching ({myCourses.length})
                         </button>
+
+                        {allPendingRequests.length > 0 && (
+                            <button
+                                className={`nav-link d-flex align-items-center ${
+                                    activeTab === 'requests'
+                                        ? 'active'
+                                        : ''
+                                }`}
+                                onClick={() =>
+                                    setActiveTab('requests')
+                                }
+                            >
+                                Requests
+                                <span className="badge bg-danger ms-2">
+                                    {allPendingRequests.length}
+                                </span>
+                            </button>
+                        )}
 
                     </div>
                 </div>
@@ -664,7 +766,83 @@ const Dashboard = () => {
                     </div>
                 ) : (
                     <>
-                        {searchSkill.trim() && (
+                        {/* Dedicated Pending Requests section for Instructors */}
+                        {allPendingRequests.length > 0 && (activeTab === 'requests' || activeTab === 'teaching' || activeTab === 'all') && (
+                            <div className="pending-requests-section mb-5 p-4 bg-white rounded shadow-sm border border-primary">
+                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                    <div className="d-flex align-items-center">
+                                        <FaBell className="me-2 text-primary" size={24} />
+                                        <h3 className="mb-0 text-primary">Pending Enrollment Requests</h3>
+                                    </div>
+                                    <span className="badge bg-danger px-3 py-2 fs-6">
+                                        {allPendingRequests.length} Waiting for Approval
+                                    </span>
+                                </div>
+                                <p className="text-muted mb-4">
+                                    Students have requested to join your courses. Review and accept or reject their enrollment below.
+                                </p>
+
+                                <div className="row g-3">
+                                    {allPendingRequests.map((reqItem) => (
+                                        <div key={`pending-${reqItem._id}`} className="col-md-6 col-lg-4">
+                                            <div className="card h-100 border-warning shadow-sm">
+                                                <div className="card-body">
+                                                    <div className="d-flex justify-content-between align-items-start mb-2">
+                                                        <span className="badge bg-light text-dark border">
+                                                            {reqItem.courseName}
+                                                        </span>
+                                                        <span className="badge bg-warning text-dark">
+                                                            Pending
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="d-flex align-items-center mb-3">
+                                                        <div className="avatar-circle me-2 bg-primary text-white d-flex align-items-center justify-content-center rounded-circle" style={{ width: '40px', height: '40px', fontWeight: 'bold' }}>
+                                                            {(reqItem.studentName || 'S').charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <h6 className="mb-0 text-dark fw-bold">
+                                                                {reqItem.studentName}
+                                                            </h6>
+                                                            {reqItem.studentEmail && (
+                                                                <small className="text-muted d-block">
+                                                                    {reqItem.studentEmail}
+                                                                </small>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="d-flex gap-2 mt-3">
+                                                        <button
+                                                            className="btn btn-success btn-sm flex-grow-1"
+                                                            onClick={() => handleApproveReject(reqItem.courseId, reqItem.studentId, 'approved')}
+                                                        >
+                                                            ✓ Accept Request
+                                                        </button>
+                                                        <button
+                                                            className="btn btn-outline-danger btn-sm flex-grow-1"
+                                                            onClick={() => handleApproveReject(reqItem.courseId, reqItem.studentId, 'rejected')}
+                                                        >
+                                                            ✕ Reject
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'requests' && allPendingRequests.length === 0 && (
+                            <div className="alert alert-success text-center py-5 mb-5">
+                                <FaUsers size={48} className="mb-3 text-success" />
+                                <h4>All caught up!</h4>
+                                <p className="mb-0">You have no pending enrollment requests at this time.</p>
+                            </div>
+                        )}
+
+                        {(searchSkill.trim() || activeTab === 'all') && activeTab !== 'requests' && (
                             <div className="courses-section mb-5">
 
                                 <div className="section-header d-flex justify-content-between align-items-center mb-4">
@@ -790,16 +968,53 @@ const Dashboard = () => {
                                                                 </span>
                                                             </div>
 
-                                                            <button
-                                                                className="btn btn-primary"
-                                                                onClick={() =>
-                                                                    handleEnrollRequest(
-                                                                        course._id
-                                                                    )
+                                                            {(() => {
+                                                                const isAuthor =
+                                                                    (course.author?._id || course.author) === currentUserId;
+                                                                const isEnrolled =
+                                                                    (enrolledCourses || []).some(c => c._id === course._id);
+                                                                const hasPendingRequest =
+                                                                    (myRequests || []).some(
+                                                                        r => r.courseId === course._id && r.status === 'pending'
+                                                                    ) ||
+                                                                    (course.enrollments || []).some(
+                                                                        e => (e.student?._id || e.student) === currentUserId && e.status === 'pending'
+                                                                    );
+
+                                                                if (isAuthor) {
+                                                                    return (
+                                                                        <span className="badge bg-secondary py-2 px-3">
+                                                                            Your Course
+                                                                        </span>
+                                                                    );
                                                                 }
-                                                            >
-                                                                Enroll
-                                                            </button>
+                                                                if (isEnrolled) {
+                                                                    return (
+                                                                        <span className="badge bg-success py-2 px-3">
+                                                                            Enrolled ✓
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                if (hasPendingRequest) {
+                                                                    return (
+                                                                        <span className="badge bg-warning text-dark py-2 px-3">
+                                                                            Pending Approval ⏳
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <button
+                                                                        className="btn btn-primary"
+                                                                        onClick={() =>
+                                                                            handleEnrollRequest(
+                                                                                course._id
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        Enroll
+                                                                    </button>
+                                                                );
+                                                            })()}
 
                                                         </div>
 
@@ -835,7 +1050,7 @@ const Dashboard = () => {
                             </div>
                         )}
 
-                        {activeTab !== 'teaching' && (
+                        {activeTab !== 'teaching' && activeTab !== 'requests' && (
                             <div className="courses-section mb-5">
 
                                 <div className="section-header d-flex justify-content-between align-items-center mb-4">
@@ -990,7 +1205,7 @@ const Dashboard = () => {
                             </div>
                         )}
 
-                        {activeTab !== 'learning' && (
+                        {activeTab !== 'learning' && activeTab !== 'requests' && (
                             <div className="courses-section mb-5">
 
                                 <div className="section-header d-flex justify-content-between align-items-center mb-4">
@@ -1051,7 +1266,7 @@ const Dashboard = () => {
                                                                 <span>
                                                                     <FaUsers className="me-2" />
                                                                     {
-                                                                        course.enrollments.filter(
+                                                                        (course.enrollments || []).filter(
                                                                             e =>
                                                                                 e.status ===
                                                                                 'approved'
@@ -1137,7 +1352,7 @@ const Dashboard = () => {
 
                                                                 <span className="badge bg-primary">
                                                                     {
-                                                                        course.enrollments.filter(
+                                                                        (course.enrollments || []).filter(
                                                                             e =>
                                                                                 e.status ===
                                                                                 'pending'
@@ -1147,7 +1362,7 @@ const Dashboard = () => {
 
                                                             </h6>
 
-                                                            {course.enrollments
+                                                            {(course.enrollments || [])
                                                                 .filter(
                                                                     e =>
                                                                         e.status ===
@@ -1175,7 +1390,7 @@ const Dashboard = () => {
                                                                                 </div>
 
                                                                                 <small className="text-muted">
-                                                                                    2 days ago
+                                                                                    Pending
                                                                                 </small>
 
                                                                             </div>
@@ -1214,7 +1429,7 @@ const Dashboard = () => {
                                                                     )
                                                                 )}
 
-                                                            {course.enrollments.filter(
+                                                            {(course.enrollments || []).filter(
                                                                 e => e.status === 'approved'
                                                             ).length > 0 && (
                                                                 <div className="mt-3">
@@ -1222,7 +1437,7 @@ const Dashboard = () => {
                                                                         Enrolled Students
                                                                     </h6>
 
-                                                                    {course.enrollments
+                                                                    {(course.enrollments || [])
                                                                         .filter(e => e.status === 'approved')
                                                                         .map(enrollment => (
                                                                             <div
@@ -1254,7 +1469,7 @@ const Dashboard = () => {
                                                                 </div>
                                                             )}
 
-                                                            {course.enrollments.filter(
+                                                            {(course.enrollments || []).filter(
                                                                 e =>
                                                                     e.status ===
                                                                     'pending'

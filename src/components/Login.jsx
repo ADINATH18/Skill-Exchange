@@ -54,6 +54,10 @@ const Login = () => {
                 response.data.name
             );
 
+            if (response.data.userId) {
+                localStorage.setItem('userId', response.data.userId);
+            }
+
             navigate('/dashboard');
 
         } catch (error) {
