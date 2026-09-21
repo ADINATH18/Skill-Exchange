@@ -248,6 +248,34 @@ const Dashboard = () => {
         }
     };
 
+    const handleCancelEnrollment = async (courseId, studentId) => {
+        const confirmed = window.confirm(
+            'Are you sure you want to cancel this student enrollment?'
+        );
+
+        if (!confirmed) return;
+
+        try {
+            await axios.delete(
+                `${API_URL}/api/courses/enrollment/${courseId}/${studentId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                }
+            );
+
+            alert('Student enrollment cancelled successfully');
+            await fetchCourses();
+        } catch (error) {
+            console.error('Cancel enrollment error:', error);
+            alert(
+                error.response?.data?.message ||
+                'Failed to cancel enrollment'
+            );
+        }
+    };
+
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('userName');
@@ -1185,6 +1213,46 @@ const Dashboard = () => {
                                                                         </div>
                                                                     )
                                                                 )}
+
+                                                            {course.enrollments.filter(
+                                                                e => e.status === 'approved'
+                                                            ).length > 0 && (
+                                                                <div className="mt-3">
+                                                                    <h6 className="mb-2">
+                                                                        Enrolled Students
+                                                                    </h6>
+
+                                                                    {course.enrollments
+                                                                        .filter(e => e.status === 'approved')
+                                                                        .map(enrollment => (
+                                                                            <div
+                                                                                key={`approved-${enrollment._id}`}
+                                                                                className="d-flex justify-content-between align-items-center p-3 mb-2 bg-white border rounded"
+                                                                            >
+                                                                                <div className="d-flex align-items-center">
+                                                                                    <FaUsers className="me-2 text-success" />
+                                                                                    <span>
+                                                                                        {enrollment.student?.name ||
+                                                                                            enrollment.student?.email ||
+                                                                                            `Student ${enrollment.student?._id || enrollment.student}`}
+                                                                                    </span>
+                                                                                </div>
+
+                                                                                <button
+                                                                                    className="btn btn-outline-danger btn-sm"
+                                                                                    onClick={() =>
+                                                                                        handleCancelEnrollment(
+                                                                                            course._id,
+                                                                                            enrollment.student?._id || enrollment.student
+                                                                                        )
+                                                                                    }
+                                                                                >
+                                                                                    Cancel Enrollment
+                                                                                </button>
+                                                                            </div>
+                                                                        ))}
+                                                                </div>
+                                                            )}
 
                                                             {course.enrollments.filter(
                                                                 e =>
