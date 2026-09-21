@@ -36,11 +36,24 @@ const Dashboard = () => {
             navigate('/login');
             return;
         }
-        fetchCourses();
-        fetchNotifications();
-        fetchUnreadMessages();
-        calculateCourseStats();
-    }, [navigate, token]);
+        let mounted = true;
+
+        const refreshDashboard = async () => {
+            if (!mounted) return;
+            await fetchCourses();
+            await fetchNotifications();
+            await fetchUnreadMessages();
+        };
+
+        refreshDashboard();
+
+        const interval = setInterval(refreshDashboard, 5000);
+
+        return () => {
+            mounted = false;
+            clearInterval(interval);
+        };
+    }, [navigate, token, searchSkill]);
 
     const fetchCourses = async () => {
         try {
@@ -88,6 +101,38 @@ const Dashboard = () => {
             console.error('Error fetching unread messages:', error);
         }
     };
+
+    useEffect(() => {
+        const progress = enrolledCourses.reduce(
+            (acc, course) => acc + (course.progress || 0),
+            0
+        );
+
+        const averageProgress = enrolledCourses.length
+            ? Math.round(progress / enrolledCourses.length)
+            : 0;
+
+        const totalStudents = myCourses.reduce(
+            (acc, course) =>
+                acc + course.enrollments.filter(e => e.status === 'approved').length,
+            0
+        );
+
+        const totalRating = myCourses.reduce(
+            (acc, course) => acc + (course.rating || 0),
+            0
+        );
+
+        const averageRating = myCourses.length
+            ? (totalRating / myCourses.length).toFixed(1)
+            : 0;
+
+        setCourseStats({
+            averageProgress,
+            totalStudents,
+            averageRating
+        });
+    }, [enrolledCourses, myCourses]);
 
     const calculateCourseStats = () => {
         const progress = enrolledCourses.reduce(
@@ -1096,11 +1141,7 @@ const Dashboard = () => {
                                                                                     <FaUsers className="me-2 text-primary" />
 
                                                                                     <span>
-                                                                                        Student
-                                                                                        ID:{' '}
-                                                                                        {
-                                                                                            enrollment.student
-                                                                                        }
+                                                                                        {enrollment.student?.name || enrollment.student?.email || `Student ${enrollment.student?._id || enrollment.student}`}
                                                                                     </span>
 
                                                                                 </div>
@@ -1118,7 +1159,7 @@ const Dashboard = () => {
                                                                                     onClick={() =>
                                                                                         handleApproveReject(
                                                                                             course._id,
-                                                                                            enrollment.student,
+                                                                                            enrollment.student?._id || enrollment.student,
                                                                                             'approved'
                                                                                         )
                                                                                     }
@@ -1131,7 +1172,7 @@ const Dashboard = () => {
                                                                                     onClick={() =>
                                                                                         handleApproveReject(
                                                                                             course._id,
-                                                                                            enrollment.student,
+                                                                                            enrollment.student?._id || enrollment.student,
                                                                                             'rejected'
                                                                                         )
                                                                                     }

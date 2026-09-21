@@ -5,32 +5,41 @@ import { verifyToken } from '../middleware/auth.js';
 const router = express.Router();
 
 // Get chat by course ID
-router.get('/:courseId', verifyToken, async (req, res) => {
-    try {
-        const chat = await Chat.findOne({
-            course: req.params.courseId,
-            $or: [
-                { student: req.user._id },
-                { instructor: req.user._id }
-            ]
-        }).populate('messages.sender', 'name');
+router.get(
+    '/unread-count',
+    verifyToken,
+    async (req, res) => {
+        try {
+            const chats = await Chat.find({
+                $or: [
+                    {
+                        student:
+                            req.user._id
+                    },
+                    {
+                        instructor:
+                            req.user._id
+                    }
+                ],
+                isActive: true
+            });
 
-        if (!chat) {
-            return res.status(404).json({ message: 'Chat not found' });
+            res.json({
+                count: 0
+            });
+        } catch (error) {
+            console.error(
+                'Unread count error:',
+                error
+            );
+
+            res.status(500).json({
+                message:
+                    error.message
+            });
         }
-
-        // Check if chat is still active based on duration
-        const now = new Date();
-        if (now > chat.endDate) {
-            chat.isActive = false;
-            await chat.save();
-        }
-
-        res.json(chat);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
     }
-});
+);
 
 // Send a message
 router.post('/:chatId/message', verifyToken, async (req, res) => {

@@ -5,10 +5,27 @@ import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Create a new course
 router.post('/create', verifyToken, async (req, res) => {
     try {
-        const { name, skills, duration, imageUrl } = req.body;
+        const {
+            name,
+            skills,
+            duration,
+            imageUrl
+        } = req.body;
+
+        if (
+            !name ||
+            !Array.isArray(skills) ||
+            skills.length === 0 ||
+            !duration ||
+            !imageUrl
+        ) {
+            return res.status(400).json({
+                message: 'Please provide course name, skills, duration and image.'
+            });
+        }
+
         const course = new Course({
             name,
             skills,
@@ -17,120 +34,283 @@ router.post('/create', verifyToken, async (req, res) => {
             author: req.user._id,
             authorName: req.user.name
         });
+
         await course.save();
+
         res.status(201).json(course);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: error.message
+        });
     }
 });
 
-// Search courses by skills
 router.get('/search', async (req, res) => {
     try {
-        const { skill } = req.query;
-        const courses = await Course.find({
-            skills: { $regex: skill, $options: 'i' }
-        });
+        const skill = (req.query.skill || '').trim();
+
+        const filter = skill
+            ? {
+                skills: {
+                    $regex: skill,
+                    $options: 'i'
+                }
+            }
+            : {};
+
+        const courses = await Course.find(filter)
+            .populate('author', 'name email')
+            .sort({ createdAt: -1 });
+
         res.json(courses);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: error.message
+        });
     }
 });
 
-// Request to enroll in a course
 router.post('/enroll/:courseId', verifyToken, async (req, res) => {
     try {
         const course = await Course.findById(req.params.courseId);
+
         if (!course) {
-            return res.status(404).json({ message: 'Course not found' });
+            return res.status(404).json({
+                message: 'Course not found'
+            });
         }
 
-        // Check if already enrolled
+        if (
+            course.author.toString() ===
+            req.user._id.toString()
+        ) {
+            return res.status(400).json({
+                message: 'You cannot enroll in your own course.'
+            });
+        }
+
         const existingEnrollment = course.enrollments.find(
-            e => e.student.toString() === req.user._id.toString()
+            enrollment =>
+                enrollment.student.toString() ===
+                req.user._id.toString()
         );
+
         if (existingEnrollment) {
-            return res.status(400).json({ message: 'Already enrolled or requested' });
+            if (existingEnrollment.status === 'rejected') {
+                existingEnrollment.status = 'pending';
+                existingEnrollment.startDate = undefined;
+                existingEnrollment.endDate = undefined;
+
+                await course.save();
+
+                return res.json({
+                    message: 'Enrollment request sent again'
+                });
+            }
+
+            return res.status(400).json({
+                message:
+                    existingEnrollment.status === 'approved'
+                        ? 'You are already enrolled in this course'
+                        : 'Enrollment request is already pending'
+            });
         }
 
         course.enrollments.push({
             student: req.user._id,
             status: 'pending'
         });
+
         await course.save();
-        res.json({ message: 'Enrollment request sent' });
+
+        res.json({
+            message: 'Enrollment request sent'
+        });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: error.message
+        });
     }
 });
 
-// Approve/reject enrollment request
-router.put('/enrollment/:courseId/:studentId', verifyToken, async (req, res) => {
-    try {
-        const { status } = req.body;
-        const course = await Course.findById(req.params.courseId);
-        
-        if (!course) {
-            return res.status(404).json({ message: 'Course not found' });
-        }
+router.put(
+    '/enrollment/:courseId/:studentId',
+    verifyToken,
+    async (req, res) => {
+        try {
+            const { status } = req.body;
 
-        if (course.author.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: 'Not authorized' });
-        }
+            if (!['approved', 'rejected'].includes(status)) {
+                return res.status(400).json({
+                    message: 'Status must be approved or rejected'
+                });
+            }
 
-        const enrollment = course.enrollments.find(
-            e => e.student.toString() === req.params.studentId
-        );
+            const course = await Course.findById(
+                req.params.courseId
+            );
 
-        if (!enrollment) {
-            return res.status(404).json({ message: 'Enrollment not found' });
-        }
+            if (!course) {
+                return res.status(404).json({
+                    message: 'Course not found'
+                });
+            }
 
-        enrollment.status = status;
-        if (status === 'approved') {
-            enrollment.startDate = new Date();
-            enrollment.endDate = new Date();
-            enrollment.endDate.setDate(enrollment.endDate.getDate() + (course.duration * 7));
+            if (
+                course.author.toString() !==
+                req.user._id.toString()
+            ) {
+                return res.status(403).json({
+                    message: 'Not authorized'
+                });
+            }
 
-            // Create a chat room
-            const chat = new Chat({
-                course: course._id,
-                instructor: course.author,
-                student: req.params.studentId,
-                startDate: enrollment.startDate,
-                endDate: enrollment.endDate
+            const enrollment = course.enrollments.find(
+                enrollment =>
+                    enrollment.student.toString() ===
+                    req.params.studentId
+            );
+
+            if (!enrollment) {
+                return res.status(404).json({
+                    message: 'Enrollment not found'
+                });
+            }
+
+            enrollment.status = status;
+
+            if (status === 'approved') {
+                enrollment.startDate = new Date();
+
+                enrollment.endDate = new Date();
+
+                enrollment.endDate.setDate(
+                    enrollment.endDate.getDate() +
+                    Number(course.duration) * 7
+                );
+
+                const existingChat = await Chat.findOne({
+                    course: course._id,
+                    instructor: course.author,
+                    student: req.params.studentId
+                });
+
+                if (!existingChat) {
+                    await Chat.create({
+                        course: course._id,
+                        instructor: course.author,
+                        student: req.params.studentId,
+                        startDate: enrollment.startDate,
+                        endDate: enrollment.endDate
+                    });
+                }
+            } else {
+                enrollment.startDate = undefined;
+                enrollment.endDate = undefined;
+            }
+
+            await course.save();
+
+            res.json({
+                message: `Enrollment ${status}`,
+                courseId: course._id,
+                studentId: req.params.studentId,
+                status
             });
-            await chat.save();
+        } catch (error) {
+            res.status(500).json({
+                message: error.message
+            });
         }
-
-        await course.save();
-        res.json({ message: `Enrollment ${status}` });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
     }
-});
+);
 
-// Get my courses (as instructor)
 router.get('/my-courses', verifyToken, async (req, res) => {
     try {
-        const courses = await Course.find({ author: req.user._id });
+        const courses = await Course.find({
+            author: req.user._id
+        })
+            .populate(
+                'enrollments.student',
+                'name email'
+            )
+            .sort({
+                createdAt: -1
+            });
+
         res.json(courses);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: error.message
+        });
     }
 });
 
-// Get enrolled courses (as student)
 router.get('/enrolled', verifyToken, async (req, res) => {
     try {
         const courses = await Course.find({
-            'enrollments.student': req.user._id,
-            'enrollments.status': 'approved'
-        });
+            enrollments: {
+                $elemMatch: {
+                    student: req.user._id,
+                    status: 'approved'
+                }
+            }
+        })
+            .populate('author', 'name email')
+            .sort({
+                createdAt: -1
+            });
+
         res.json(courses);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: error.message
+        });
     }
 });
 
-export default router; 
+router.get(
+    '/my-enrollment-requests',
+    verifyToken,
+    async (req, res) => {
+        try {
+            const courses = await Course.find({
+                'enrollments.student': req.user._id
+            })
+                .populate('author', 'name email')
+                .sort({
+                    createdAt: -1
+                });
+
+            const requests = [];
+
+            for (const course of courses) {
+                const enrollment =
+                    course.enrollments.find(
+                        item =>
+                            item.student.toString() ===
+                            req.user._id.toString()
+                    );
+
+                if (enrollment) {
+                    requests.push({
+                        courseId: course._id,
+                        courseName: course.name,
+                        instructor: course.author,
+                        status: enrollment.status,
+                        startDate: enrollment.startDate,
+                        endDate: enrollment.endDate
+                    });
+                }
+            }
+
+            res.json(requests);
+        } catch (error) {
+            res.status(500).json({
+                message: error.message
+            });
+        }
+    }
+);
+
+export default router;
