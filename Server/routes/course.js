@@ -590,4 +590,31 @@ router.put('/:courseId/progress', verifyToken, async (req, res) => {
     }
 });
 
+// Add or update course modules (for instructor)
+router.put('/:courseId/modules', verifyToken, async (req, res) => {
+    try {
+        const { modules } = req.body;
+        const course = await Course.findById(req.params.courseId);
+
+        if (!course) {
+            return res.status(404).json({ message: 'Course not found' });
+        }
+
+        if (course.author.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'Only the course instructor can update modules' });
+        }
+
+        course.modules = Array.isArray(modules) ? modules : [];
+        await course.save();
+
+        res.json({
+            message: 'Modules updated successfully',
+            modules: course.modules
+        });
+    } catch (error) {
+        console.error('Update modules error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
 export default router;

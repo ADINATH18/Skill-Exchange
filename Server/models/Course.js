@@ -35,6 +35,16 @@ const courseSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    modules: [{
+        title: {
+            type: String,
+            required: true
+        },
+        description: {
+            type: String,
+            default: ''
+        }
+    }],
     enrollments: [{
         student: {
             type: mongoose.Schema.Types.ObjectId,
