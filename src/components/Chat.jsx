@@ -11,7 +11,9 @@ import {
     FaPaperclip,
     FaPaperPlane,
     FaTimes,
-    FaVideo
+    FaVideo,
+    FaTrash,
+    FaSync
 } from 'react-icons/fa';
 import VideoCall from './VideoCall';
 
@@ -53,9 +55,10 @@ const Chat = () => {
 
     const fetchChat = async () => {
         try {
+            const studentIdParam = location.state?.studentId ? `?studentId=${location.state.studentId}` : '';
             const url = isInstructorView
                 ? `${API_URL}/api/chats/id/${courseId}`
-                : `${API_URL}/api/chats/${courseId}`;
+                : `${API_URL}/api/chats/${courseId}${studentIdParam}`;
 
             const response = await axios.get(url, {
                 headers: {
@@ -77,6 +80,38 @@ const Chat = () => {
                     'Error fetching chat'
             );
             setLoading(false);
+        }
+    };
+
+    const handleDeleteChat = async () => {
+        if (!chat) return;
+        if (!window.confirm('Are you sure you want to remove this inactive chat? All messages will be deleted.')) {
+            return;
+        }
+
+        try {
+            await axios.delete(`${API_URL}/api/chats/${chat._id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            navigate('/messages');
+        } catch (err) {
+            console.error('Error deleting chat:', err);
+            setErrorMessage(err.response?.data?.message || 'Error removing chat');
+            setShowErrorModal(true);
+        }
+    };
+
+    const handleReactivateChat = async () => {
+        if (!chat) return;
+        try {
+            const res = await axios.put(`${API_URL}/api/chats/${chat._id}/reactivate`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setChat(res.data.chat);
+        } catch (err) {
+            console.error('Error reactivating chat:', err);
+            setErrorMessage(err.response?.data?.message || 'Error reactivating chat');
+            setShowErrorModal(true);
         }
     };
 
@@ -329,6 +364,33 @@ const Chat = () => {
                     </div>
                 </div>
             </div>
+
+            {!chat.isActive && (
+                <div className="alert alert-warning mb-0 rounded-0 px-4 py-2 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+                    <div className="d-flex align-items-center">
+                        <FaExclamationTriangle className="me-2 text-warning" />
+                        <span>This chat is currently inactive (duration has expired).</span>
+                    </div>
+                    <div className="d-flex gap-2">
+                        <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm d-flex align-items-center"
+                            onClick={handleDeleteChat}
+                            title="Remove this inactive chat and its data"
+                        >
+                            <FaTrash className="me-1" /> Delete Inactive Chat
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-success btn-sm d-flex align-items-center"
+                            onClick={handleReactivateChat}
+                            title="Reactivate chat and extend duration"
+                        >
+                            <FaSync className="me-1" /> Reactivate & Allow Chatting
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div
                 className="chat-messages flex-grow-1 p-4"

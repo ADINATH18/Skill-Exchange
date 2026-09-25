@@ -1,8 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Card, ListGroup, Badge, Accordion, Button, Nav } from 'react-bootstrap';
-import { FaArrowLeft, FaComments, FaGraduationCap, FaChalkboardTeacher, FaRegCommentDots } from 'react-icons/fa';
+import { Card, ListGroup, Badge, Accordion, Button, Nav, Alert } from 'react-bootstrap';
+import {
+    FaArrowLeft,
+    FaComments,
+    FaGraduationCap,
+    FaChalkboardTeacher,
+    FaRegCommentDots,
+    FaTrash,
+    FaSync,
+    FaUserPlus
+} from 'react-icons/fa';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:1337';
 
@@ -13,6 +22,7 @@ const InstructorChat = () => {
     const [viewMode, setViewMode] = useState('all'); // 'all', 'student', 'instructor'
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
     const token = localStorage.getItem('token');
 
     const getCurrentUserId = () => {
@@ -59,6 +69,83 @@ const InstructorChat = () => {
         }
     };
 
+    const handleDeleteChat = async (chatId, e) => {
+        if (e) e.stopPropagation();
+        if (!window.confirm('Are you sure you want to remove this inactive chat?')) {
+            return;
+        }
+
+        try {
+            await axios.delete(`${API_URL}/api/chats/${chatId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setSuccessMsg('Chat removed successfully');
+            setTimeout(() => setSuccessMsg(''), 4000);
+            fetchChats();
+        } catch (err) {
+            console.error('Error deleting chat:', err);
+            setError(err.response?.data?.message || 'Error removing chat');
+        }
+    };
+
+    const handleClearInactiveChats = async () => {
+        if (!window.confirm('Are you sure you want to remove all inactive chats data? This cannot be undone.')) {
+            return;
+        }
+
+        try {
+            const res = await axios.delete(`${API_URL}/api/chats/inactive/cleanup`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setSuccessMsg(res.data.message || 'Inactive chats removed successfully');
+            setTimeout(() => setSuccessMsg(''), 4000);
+            fetchChats();
+        } catch (err) {
+            console.error('Error cleaning up inactive chats:', err);
+            setError(err.response?.data?.message || 'Error removing inactive chats');
+        }
+    };
+
+    const handleStartChatWithStudent = async (courseId, studentId, e) => {
+        if (e) e.stopPropagation();
+        try {
+            const res = await axios.post(
+                `${API_URL}/api/chats/start`,
+                { courseId, studentId },
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
+            navigate(`/chat/${res.data._id}`, {
+                state: { isInstructor: true }
+            });
+        } catch (err) {
+            console.error('Error starting chat with student:', err);
+            setError(err.response?.data?.message || 'Error starting chat with student');
+        }
+    };
+
+    const handleReactivateChat = async (chatId, e) => {
+        if (e) e.stopPropagation();
+        try {
+            const res = await axios.put(
+                `${API_URL}/api/chats/${chatId}/reactivate`,
+                {},
+                {
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
+            navigate(`/chat/${chatId}`, {
+                state: { isInstructor: true }
+            });
+        } catch (err) {
+            console.error('Error reactivating chat:', err);
+            setError(err.response?.data?.message || 'Error reactivating chat');
+        }
+    };
+
     const formatTime = (timestamp) => {
         if (!timestamp) return 'No messages yet';
         const date = new Date(timestamp);
@@ -76,6 +163,14 @@ const InstructorChat = () => {
         const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
         return instructorId === currentUserId;
     });
+
+    // Count inactive chats
+    const inactiveUserChatsCount = allChats.filter((c) => !c.isActive).length;
+    const inactiveInstructorChatsCount = Object.values(instructorGroupedChats).reduce(
+        (acc, list) => acc + list.filter((c) => !c.isActive && !c.isNewStudent).length,
+        0
+    );
+    const totalInactiveCount = Math.max(inactiveUserChatsCount, inactiveInstructorChatsCount);
 
     if (loading) {
         return (
@@ -105,19 +200,39 @@ const InstructorChat = () => {
                     </p>
                 </div>
 
-                <Button
-                    variant="outline-secondary"
-                    className="d-flex align-items-center"
-                    onClick={() => navigate('/dashboard')}
-                >
-                    <FaArrowLeft className="me-2" /> Back to Dashboard
-                </Button>
+                <div className="d-flex align-items-center gap-2">
+                    {totalInactiveCount > 0 && (
+                        <Button
+                            variant="outline-danger"
+                            size="sm"
+                            className="d-flex align-items-center shadow-xs"
+                            onClick={handleClearInactiveChats}
+                            title="Delete all inactive/expired chats data from database"
+                        >
+                            <FaTrash className="me-1" /> Remove Inactive Chats ({totalInactiveCount})
+                        </Button>
+                    )}
+
+                    <Button
+                        variant="outline-secondary"
+                        className="d-flex align-items-center"
+                        onClick={() => navigate('/dashboard')}
+                    >
+                        <FaArrowLeft className="me-2" /> Back to Dashboard
+                    </Button>
+                </div>
             </div>
 
             {error && (
-                <div className="alert alert-danger shadow-sm mb-4">
+                <Alert variant="danger" dismissible onClose={() => setError('')} className="shadow-sm mb-4">
                     {error}
-                </div>
+                </Alert>
+            )}
+
+            {successMsg && (
+                <Alert variant="success" dismissible onClose={() => setSuccessMsg('')} className="shadow-sm mb-4">
+                    {successMsg}
+                </Alert>
             )}
 
             {/* Filter Tabs */}
@@ -151,7 +266,7 @@ const InstructorChat = () => {
                             <FaGraduationCap className="me-2 text-primary" /> My Learning Chats (with Instructors)
                         </h4>
                         <Badge bg="primary" pill>
-                            {studentChats.length} active
+                            {studentChats.length} total
                         </Badge>
                     </div>
 
@@ -170,7 +285,7 @@ const InstructorChat = () => {
                                             style={{
                                                 cursor: 'pointer',
                                                 transition: 'transform 0.2s',
-                                                borderLeft: '4px solid #0d6efd'
+                                                borderLeft: `4px solid ${chat.isActive ? '#0d6efd' : '#6c757d'}`
                                             }}
                                             onClick={() => navigate(`/chat/${courseId}`)}
                                         >
@@ -183,9 +298,22 @@ const InstructorChat = () => {
                                                         Instructor: <strong>{instructorName}</strong>
                                                     </div>
                                                 </div>
-                                                <Badge bg={chat.isActive ? 'success' : 'secondary'}>
-                                                    {chat.isActive ? 'Active' : 'Expired'}
-                                                </Badge>
+                                                <div className="d-flex align-items-center gap-1">
+                                                    <Badge bg={chat.isActive ? 'success' : 'secondary'}>
+                                                        {chat.isActive ? 'Active' : 'Inactive'}
+                                                    </Badge>
+                                                    {!chat.isActive && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline-danger"
+                                                            className="p-1 line-height-1"
+                                                            title="Delete inactive chat"
+                                                            onClick={(e) => handleDeleteChat(chat._id, e)}
+                                                        >
+                                                            <FaTrash size={12} />
+                                                        </Button>
+                                                    )}
+                                                </div>
                                             </div>
 
                                             <p className="text-secondary small mb-3 text-truncate">
@@ -196,17 +324,28 @@ const InstructorChat = () => {
                                                 <small className="text-muted">
                                                     {formatTime(lastMsg?.timestamp || chat.updatedAt)}
                                                 </small>
-                                                <Button
-                                                    size="sm"
-                                                    variant="primary"
-                                                    className="d-flex align-items-center"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        navigate(`/chat/${courseId}`);
-                                                    }}
-                                                >
-                                                    <FaComments className="me-1" /> Open Chat
-                                                </Button>
+                                                <div className="d-flex gap-2">
+                                                    {!chat.isActive && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline-success"
+                                                            onClick={(e) => handleReactivateChat(chat._id, e)}
+                                                        >
+                                                            <FaSync className="me-1" /> Reactivate
+                                                        </Button>
+                                                    )}
+                                                    <Button
+                                                        size="sm"
+                                                        variant={chat.isActive ? 'primary' : 'outline-secondary'}
+                                                        className="d-flex align-items-center"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            navigate(`/chat/${courseId}`);
+                                                        }}
+                                                    >
+                                                        <FaComments className="me-1" /> Open Chat
+                                                    </Button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -239,9 +378,11 @@ const InstructorChat = () => {
                         <h4 className="fw-bold mb-0 text-dark d-flex align-items-center">
                             <FaChalkboardTeacher className="me-2 text-success" /> My Teaching Chats (with Students)
                         </h4>
-                        <Badge bg="success" pill>
-                            {Object.values(instructorGroupedChats).reduce((acc, c) => acc + c.length, 0)} student chats
-                        </Badge>
+                        <div className="d-flex gap-2">
+                            <Badge bg="success" pill>
+                                {Object.values(instructorGroupedChats).reduce((acc, c) => acc + c.length, 0)} student contacts
+                            </Badge>
+                        </div>
                     </div>
 
                     {Object.keys(instructorGroupedChats).length > 0 ? (
@@ -258,21 +399,32 @@ const InstructorChat = () => {
                                     </Accordion.Header>
                                     <Accordion.Body className="p-0">
                                         <ListGroup variant="flush">
-                                            {courseChats.map((chat) => (
+                                            {courseChats.map((chat, cIdx) => (
                                                 <ListGroup.Item
-                                                    key={chat.chatId}
+                                                    key={chat.chatId || `new-student-${cIdx}`}
                                                     className="d-flex justify-content-between align-items-center p-3"
-                                                    action
-                                                    onClick={() =>
-                                                        navigate(`/chat/${chat.chatId}`, {
-                                                            state: { isInstructor: true }
-                                                        })
-                                                    }
+                                                    action={!chat.isNewStudent}
+                                                    onClick={() => {
+                                                        if (chat.chatId) {
+                                                            navigate(`/chat/${chat.chatId}`, {
+                                                                state: { isInstructor: true }
+                                                            });
+                                                        } else if (chat.isNewStudent) {
+                                                            handleStartChatWithStudent(chat.courseId, chat.studentId);
+                                                        }
+                                                    }}
                                                 >
                                                     <div>
-                                                        <h6 className="mb-1 fw-bold text-dark">
-                                                            Student: {chat.student}
-                                                        </h6>
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <h6 className="mb-1 fw-bold text-dark">
+                                                                Student: {chat.student}
+                                                            </h6>
+                                                            {chat.isNewStudent && (
+                                                                <Badge bg="primary" pill>
+                                                                    <FaUserPlus className="me-1" /> New Student
+                                                                </Badge>
+                                                            )}
+                                                        </div>
                                                         <p className="mb-1 text-muted small text-truncate" style={{ maxWidth: '400px' }}>
                                                             {chat.lastMessage}
                                                         </p>
@@ -281,22 +433,59 @@ const InstructorChat = () => {
                                                         </small>
                                                     </div>
 
-                                                    <div className="text-end">
-                                                        <Badge bg={chat.isActive ? 'success' : 'secondary'} className="me-2">
-                                                            {chat.isActive ? 'Active' : 'Inactive'}
-                                                        </Badge>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline-success"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                navigate(`/chat/${chat.chatId}`, {
-                                                                    state: { isInstructor: true }
-                                                                });
-                                                            }}
-                                                        >
-                                                            Chat
-                                                        </Button>
+                                                    <div className="text-end d-flex align-items-center gap-2">
+                                                        {chat.isNewStudent ? (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="success"
+                                                                onClick={(e) => handleStartChatWithStudent(chat.courseId, chat.studentId, e)}
+                                                            >
+                                                                <FaComments className="me-1" /> Start Chat
+                                                            </Button>
+                                                        ) : (
+                                                            <>
+                                                                <Badge bg={chat.isActive ? 'success' : 'secondary'}>
+                                                                    {chat.isActive ? 'Active' : 'Inactive'}
+                                                                </Badge>
+
+                                                                {!chat.isActive && (
+                                                                    <>
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="outline-success"
+                                                                            title="Reactivate chat and extend duration"
+                                                                            onClick={(e) => handleReactivateChat(chat.chatId, e)}
+                                                                        >
+                                                                            <FaSync className="me-1" /> Reactivate
+                                                                        </Button>
+
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="outline-danger"
+                                                                            title="Delete inactive chat data"
+                                                                            onClick={(e) => handleDeleteChat(chat.chatId, e)}
+                                                                        >
+                                                                            <FaTrash />
+                                                                        </Button>
+                                                                    </>
+                                                                )}
+
+                                                                {chat.isActive && (
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline-success"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            navigate(`/chat/${chat.chatId}`, {
+                                                                                state: { isInstructor: true }
+                                                                            });
+                                                                        }}
+                                                                    >
+                                                                        Chat
+                                                                    </Button>
+                                                                )}
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </ListGroup.Item>
                                             ))}

@@ -310,6 +310,30 @@ const Dashboard = () => {
         }
     };
 
+    const handleStartChatWithStudent = async (courseId, studentId) => {
+        try {
+            const res = await axios.post(
+                `${API_URL}/api/chats/start`,
+                { courseId, studentId },
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                }
+            );
+
+            navigate(`/chat/${res.data._id}`, {
+                state: { isInstructor: true }
+            });
+        } catch (error) {
+            console.error('Start chat error:', error);
+            alert(
+                error.response?.data?.message ||
+                'Failed to start chat with student'
+            );
+        }
+    };
+
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('userName');
@@ -1482,17 +1506,33 @@ const Dashboard = () => {
                                                                                     </span>
                                                                                 </div>
 
-                                                                                <button
-                                                                                    className="btn btn-outline-danger btn-sm"
-                                                                                    onClick={() =>
-                                                                                        handleCancelEnrollment(
-                                                                                            course._id,
-                                                                                            enrollment.student?._id || enrollment.student
-                                                                                        )
-                                                                                    }
-                                                                                >
-                                                                                    Cancel Enrollment
-                                                                                </button>
+                                                                                <div className="d-flex gap-2">
+                                                                                    <button
+                                                                                        className="btn btn-primary btn-sm d-flex align-items-center"
+                                                                                        onClick={() =>
+                                                                                            handleStartChatWithStudent(
+                                                                                                course._id,
+                                                                                                enrollment.student?._id || enrollment.student
+                                                                                            )
+                                                                                        }
+                                                                                        title="Chat with student"
+                                                                                    >
+                                                                                        <FaComments className="me-1" />
+                                                                                        Chat
+                                                                                    </button>
+
+                                                                                    <button
+                                                                                        className="btn btn-outline-danger btn-sm"
+                                                                                        onClick={() =>
+                                                                                            handleCancelEnrollment(
+                                                                                                course._id,
+                                                                                                enrollment.student?._id || enrollment.student
+                                                                                            )
+                                                                                        }
+                                                                                    >
+                                                                                        Cancel Enrollment
+                                                                                    </button>
+                                                                                </div>
                                                                             </div>
                                                                         ))}
                                                                 </div>
