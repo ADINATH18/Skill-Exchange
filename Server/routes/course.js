@@ -543,7 +543,7 @@ router.get('/:courseId', verifyToken, async (req, res) => {
             e => e.student && e.student.toString() === req.user._id.toString()
         );
 
-        const isAuthor = course.author._id.toString() === req.user._id.toString();
+        const isAuthor = (course.author?._id || course.author || '').toString() === req.user._id.toString();
         const isEnrolled = enrollment?.status === 'approved';
 
         res.json({
@@ -600,7 +600,8 @@ router.put('/:courseId/modules', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Course not found' });
         }
 
-        if (course.author.toString() !== req.user._id.toString()) {
+        const authorId = (course.author?._id || course.author || '').toString();
+        if (authorId !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Only the course instructor can update modules' });
         }
 

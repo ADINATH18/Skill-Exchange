@@ -79,23 +79,25 @@ router.post('/start', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Course not found' });
         }
 
-        const isInstructor = course.author.toString() === req.user._id.toString();
-        const isStudent = studentId.toString() === req.user._id.toString();
+        const userId = (req.user?._id || req.user?.id || req.user?.userId || '').toString();
+        const courseAuthorId = (course.author?._id || course.author || '').toString();
+        const isInstructor = courseAuthorId === userId;
+        const isStudent = studentId.toString() === userId;
 
         if (!isInstructor && !isStudent) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
         const enrollment = (course.enrollments || []).find(
-            e => e.student && e.student.toString() === studentId.toString() && e.status === 'approved'
+            e => e.student && (e.student?._id || e.student || '').toString() === studentId.toString() && e.status === 'approved'
         );
 
         if (!enrollment) {
             return res.status(400).json({ message: 'Student does not have an approved enrollment in this course' });
         }
 
-        const startDate = new Date();
-        const endDate = new Date(Date.now() + Number(course.duration || 4) * 7 * 24 * 60 * 60 * 1000);
+        const startDate = enrollment.startDate || new Date();
+        const endDate = enrollment.endDate || new Date(Date.now() + Number(course.duration || 4) * 7 * 24 * 60 * 60 * 1000);
 
         let chat = await Chat.findOne({
             course: courseId,
@@ -140,10 +142,11 @@ router.put('/:chatId/reactivate', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Chat not found' });
         }
 
-        if (
-            chat.instructor.toString() !== req.user._id.toString() &&
-            chat.student.toString() !== req.user._id.toString()
-        ) {
+        const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
+        const studentId = (chat.student?._id || chat.student || '').toString();
+        const userId = (req.user?._id || req.user?.id || req.user?.userId || '').toString();
+
+        if (instructorId !== userId && studentId !== userId) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
@@ -176,10 +179,11 @@ router.delete('/:chatId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Chat not found' });
         }
 
-        if (
-            chat.instructor.toString() !== req.user._id.toString() &&
-            chat.student.toString() !== req.user._id.toString()
-        ) {
+        const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
+        const studentId = (chat.student?._id || chat.student || '').toString();
+        const userId = (req.user?._id || req.user?.id || req.user?.userId || '').toString();
+
+        if (instructorId !== userId && studentId !== userId) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
@@ -192,12 +196,39 @@ router.delete('/:chatId', verifyToken, async (req, res) => {
     }
 });
 
-// Get chat by course ID (supports optional ?studentId=... for instructors)
+// Get chat by course ID (supports optional ?studentId=... for instructors, or direct chatId fallback)
 router.get('/:courseId', verifyToken, async (req, res) => {
     try {
         const { studentId } = req.query;
-        let query;
+        const userId = (req.user?._id || req.user?.id || req.user?.userId || '').toString();
 
+        // 1. Safe fallback: check if req.params.courseId is actually a direct Chat ID
+        try {
+            const directChat = await Chat.findById(req.params.courseId)
+                .populate('messages.sender', 'name')
+                .populate('course', 'name imageUrl duration skills author')
+                .populate('instructor', 'name email')
+                .populate('student', 'name email');
+
+            if (directChat) {
+                const instId = (directChat.instructor?._id || directChat.instructor || '').toString();
+                const studId = (directChat.student?._id || directChat.student || '').toString();
+
+                if (instId === userId || studId === userId) {
+                    const now = new Date();
+                    if (now > directChat.endDate && directChat.isActive) {
+                        directChat.isActive = false;
+                        await directChat.save();
+                    }
+                    return res.json(directChat);
+                }
+            }
+        } catch {
+            // Not a valid ObjectId or not a chat ID, continue to course lookup
+        }
+
+        // 2. Look up by course ID
+        let query;
         if (studentId) {
             query = {
                 course: req.params.courseId,
@@ -224,29 +255,46 @@ router.get('/:courseId', verifyToken, async (req, res) => {
         if (!chat) {
             const course = await Course.findById(req.params.courseId);
             if (course) {
-                const targetStudentId = studentId || req.user._id;
-                const enrollment = (course.enrollments || []).find(
-                    e => e.student && e.student.toString() === targetStudentId.toString() && e.status === 'approved'
-                );
+                const isInstructor = (course.author?._id || course.author || '').toString() === userId;
+                let targetStudentId = studentId;
 
-                if (enrollment) {
-                    const startDate = enrollment.startDate || new Date();
-                    const endDate = enrollment.endDate || new Date(Date.now() + Number(course.duration || 4) * 7 * 24 * 60 * 60 * 1000);
+                if (!targetStudentId && isInstructor) {
+                    const firstApproved = (course.enrollments || []).find(
+                        e => e.status === 'approved' && e.student
+                    );
+                    if (firstApproved) {
+                        targetStudentId = (firstApproved.student?._id || firstApproved.student || '').toString();
+                    }
+                }
 
-                    const newChat = await Chat.create({
-                        course: course._id,
-                        instructor: course.author,
-                        student: targetStudentId,
-                        startDate,
-                        endDate,
-                        isActive: true
-                    });
+                if (!targetStudentId && !isInstructor) {
+                    targetStudentId = userId;
+                }
 
-                    chat = await Chat.findById(newChat._id)
-                        .populate('messages.sender', 'name')
-                        .populate('course', 'name imageUrl duration skills author')
-                        .populate('instructor', 'name email')
-                        .populate('student', 'name email');
+                if (targetStudentId) {
+                    const enrollment = (course.enrollments || []).find(
+                        e => e.student && (e.student?._id || e.student || '').toString() === targetStudentId && e.status === 'approved'
+                    );
+
+                    if (enrollment) {
+                        const startDate = enrollment.startDate || new Date();
+                        const endDate = enrollment.endDate || new Date(Date.now() + Number(course.duration || 4) * 7 * 24 * 60 * 60 * 1000);
+
+                        const newChat = await Chat.create({
+                            course: course._id,
+                            instructor: course.author,
+                            student: targetStudentId,
+                            startDate,
+                            endDate,
+                            isActive: true
+                        });
+
+                        chat = await Chat.findById(newChat._id)
+                            .populate('messages.sender', 'name')
+                            .populate('course', 'name imageUrl duration skills author')
+                            .populate('instructor', 'name email')
+                            .populate('student', 'name email');
+                    }
                 }
             }
         }
@@ -276,10 +324,11 @@ router.post('/:chatId/message', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Chat not found' });
         }
 
-        if (
-            chat.student.toString() !== req.user._id.toString() && 
-            chat.instructor.toString() !== req.user._id.toString()
-        ) {
+        const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
+        const studentId = (chat.student?._id || chat.student || '').toString();
+        const userId = (req.user?._id || req.user?.id || req.user?.userId || '').toString();
+
+        if (studentId !== userId && instructorId !== userId) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 
@@ -299,6 +348,7 @@ router.post('/:chatId/message', verifyToken, async (req, res) => {
         });
 
         await chat.save();
+        await chat.populate('messages.sender', 'name');
         res.status(201).json(chat.messages[chat.messages.length - 1]);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -415,10 +465,11 @@ router.get('/id/:chatId', verifyToken, async (req, res) => {
             return res.status(404).json({ message: 'Chat not found' });
         }
 
-        if (
-            chat.instructor.toString() !== req.user._id.toString() &&
-            chat.student.toString() !== req.user._id.toString()
-        ) {
+        const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
+        const studentId = (chat.student?._id || chat.student || '').toString();
+        const userId = (req.user?._id || req.user?.id || req.user?.userId || '').toString();
+
+        if (instructorId !== userId && studentId !== userId) {
             return res.status(403).json({ message: 'Not authorized' });
         }
 

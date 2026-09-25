@@ -40,6 +40,16 @@ const Chat = () => {
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
 
+    const getCurrentUserId = () => {
+        try {
+            if (!token) return localStorage.getItem('userId');
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return (payload._id || payload.userId || localStorage.getItem('userId') || '').toString();
+        } catch {
+            return (localStorage.getItem('userId') || '').toString();
+        }
+    };
+
     useEffect(() => {
         if (!token) {
             navigate('/login');
@@ -56,17 +66,38 @@ const Chat = () => {
     const fetchChat = async () => {
         try {
             const studentIdParam = location.state?.studentId ? `?studentId=${location.state.studentId}` : '';
-            const url = isInstructorView
-                ? `${API_URL}/api/chats/id/${courseId}`
-                : `${API_URL}/api/chats/${courseId}${studentIdParam}`;
+            let response;
 
-            const response = await axios.get(url, {
-                headers: {
-                    Authorization: `Bearer ${token}`
+            try {
+                // If isInstructorView, try direct chat ID endpoint first; otherwise try course endpoint
+                const primaryUrl = isInstructorView
+                    ? `${API_URL}/api/chats/id/${courseId}`
+                    : `${API_URL}/api/chats/${courseId}${studentIdParam}`;
+
+                response = await axios.get(primaryUrl, {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+            } catch (initialErr) {
+                // If 404 or 400 from first attempt, gracefully try alternative endpoint
+                if (initialErr.response?.status === 404 || initialErr.response?.status === 400) {
+                    const fallbackUrl = isInstructorView
+                        ? `${API_URL}/api/chats/${courseId}${studentIdParam}`
+                        : `${API_URL}/api/chats/id/${courseId}`;
+
+                    response = await axios.get(fallbackUrl, {
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        }
+                    });
+                } else {
+                    throw initialErr;
                 }
-            });
+            }
 
             setChat(response.data);
+            setError('');
             setLoading(false);
 
             setTimeout(() => {
@@ -75,9 +106,10 @@ const Chat = () => {
                 });
             }, 0);
         } catch (err) {
+            console.error('Fetch chat error:', err);
             setError(
                 err.response?.data?.message ||
-                    'Error fetching chat'
+                'Error fetching chat'
             );
             setLoading(false);
         }
@@ -290,47 +322,83 @@ const Chat = () => {
         );
     }
 
-    if (error) {
+    if (error || !chat) {
         return (
-            <div className="alert alert-danger m-3 d-flex align-items-center">
-                <FaTimes className="me-2" />
-                {error}
+            <div className="container py-5 d-flex justify-content-center align-items-center min-vh-100">
+                <div className="card shadow-sm border-0 p-4 text-center rounded-4" style={{ maxWidth: '480px', width: '100%' }}>
+                    <div className="mb-3 text-warning">
+                        <FaExclamationTriangle size={48} />
+                    </div>
+                    <h4 className="fw-bold mb-2">Unable to Load Chat</h4>
+                    <p className="text-muted mb-4">
+                        {error || 'The requested chat conversation could not be found or you do not have permission.'}
+                    </p>
+                    <div className="d-flex flex-column gap-2">
+                        <Button
+                            variant="primary"
+                            className="d-flex align-items-center justify-content-center"
+                            onClick={() => {
+                                setLoading(true);
+                                setError('');
+                                fetchChat();
+                            }}
+                        >
+                            <FaSync className="me-2" /> Try Again
+                        </Button>
+                        <Button
+                            variant="outline-primary"
+                            className="d-flex align-items-center justify-content-center"
+                            onClick={() => navigate('/messages')}
+                        >
+                            <FaArrowLeft className="me-2" /> Go to Message Center
+                        </Button>
+                        <Button
+                            variant="outline-secondary"
+                            onClick={() => navigate('/dashboard')}
+                        >
+                            Back to Dashboard
+                        </Button>
+                    </div>
+                </div>
             </div>
         );
     }
 
-    if (!chat) {
-        return (
-            <div className="alert alert-warning m-3 d-flex align-items-center">
-                <FaTimes className="me-2" />
-                Chat not found
-            </div>
-        );
-    }
+    const currentUserId = getCurrentUserId();
+    const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
+    const isUserInstructor = Boolean(currentUserId && instructorId === currentUserId) || Boolean(isInstructorView);
 
     return (
         <div className="chat-container vh-100 d-flex flex-column">
             <div className="chat-header bg-white shadow-sm py-3 px-4">
-                <div className="d-flex justify-content-between align-items-center">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div className="d-flex align-items-center">
-                        <button
-                            className="btn btn-link text-dark p-0 me-3"
-                            onClick={() =>
-                                navigate('/dashboard')
-                            }
-                        >
-                            <FaArrowLeft size={20} />
-                        </button>
+                        <div className="d-flex align-items-center me-3 gap-2">
+                            <button
+                                className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                                onClick={() => navigate('/messages')}
+                                title="Back to Message Center"
+                            >
+                                <FaArrowLeft className="me-1" /> Messages
+                            </button>
+                            <button
+                                className="btn btn-outline-primary btn-sm d-flex align-items-center"
+                                onClick={() => navigate('/dashboard')}
+                                title="Back to Dashboard"
+                            >
+                                Dashboard
+                            </button>
+                        </div>
 
                         <div>
-                            <h5 className="mb-0">
-                                {chat.course?.name}
+                            <h5 className="mb-0 fw-bold text-dark">
+                                {chat.course?.name || 'Skill Exchange Course'}
                             </h5>
 
                             <small className="text-muted">
-                                {isInstructorView
-                                    ? `Student Chat (${chat.student?.name || 'Student'})`
-                                    : `Instructor Chat (${chat.instructor?.name || 'Instructor'})`}
+                                {isUserInstructor
+                                    ? `Student: ${chat.student?.name || 'Student'} (${chat.student?.email || ''})`
+                                    : `Instructor: ${chat.instructor?.name || 'Instructor'} (${chat.instructor?.email || ''})`}
                             </small>
                         </div>
                     </div>
@@ -423,7 +491,7 @@ const Chat = () => {
                                 }`}
                             >
                                 <div className="message-sender mb-1">
-                                    {msg.sender.name}
+                                    {msg.sender?.name || (isInstructorMessage ? 'Instructor' : 'Student')}
                                 </div>
 
                                 {msg.content?.trim() && (
