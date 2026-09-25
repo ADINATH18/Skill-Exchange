@@ -36,9 +36,11 @@ const Chat = () => {
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [showVideoCall, setShowVideoCall] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
+    const videoInputRef = useRef(null);
 
     const getCurrentUserId = () => {
         try {
@@ -166,9 +168,9 @@ const Chat = () => {
             let resourceType = '';
 
             if (resourceFile) {
-                if (resourceFile.size > 50 * 1024 * 1024) {
+                if (resourceFile.size > 500 * 1024 * 1024) {
                     setErrorMessage(
-                        'File size exceeds 50MB limit. Please choose a smaller file.'
+                        'File size exceeds 500MB limit. Please choose a file up to 500MB.'
                     );
                     setShowErrorModal(true);
                     setSending(false);
@@ -176,44 +178,49 @@ const Chat = () => {
                 }
 
                 const formData = new FormData();
-
                 formData.append('file', resourceFile);
+                setUploadProgress(0);
 
                 try {
-                    const uploadResponse =
-                        await axios.post(
-                            `${API_URL}/api/upload`,
-                            formData,
-                            {
-                                headers: {
-                                    Authorization: `Bearer ${token}`,
-                                    'Content-Type':
-                                        'multipart/form-data'
+                    const uploadResponse = await axios.post(
+                        `${API_URL}/api/upload`,
+                        formData,
+                        {
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                                'Content-Type': 'multipart/form-data'
+                            },
+                            onUploadProgress: (progressEvent) => {
+                                if (progressEvent.total) {
+                                    const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                                    setUploadProgress(percent);
                                 }
                             }
-                        );
+                        }
+                    );
 
                     resourceUrl = `${API_URL}${uploadResponse.data.url}`;
+                    const mimeType = (resourceFile.type || '').toLowerCase();
+                    const fileName = (resourceFile.name || '').toLowerCase();
 
-                    resourceType =
-                        resourceFile.type.startsWith(
-                            'image/'
-                        )
-                            ? 'image'
-                            : resourceFile.type.startsWith(
-                                  'video/'
-                              )
-                            ? 'video'
-                            : 'document';
+                    if (mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(fileName)) {
+                        resourceType = 'image';
+                    } else if (mimeType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|flv|wmv)$/i.test(fileName)) {
+                        resourceType = 'video';
+                    } else if (mimeType.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) {
+                        resourceType = 'audio';
+                    } else {
+                        resourceType = 'document';
+                    }
                 } catch (uploadError) {
                     setErrorMessage(
-                        uploadError.response?.data
-                            ?.message ||
-                            'Error uploading file. Please try again.'
+                        uploadError.response?.data?.message ||
+                        'Error uploading file. Please try again.'
                     );
 
                     setShowErrorModal(true);
                     setSending(false);
+                    setUploadProgress(0);
                     return;
                 }
             }
@@ -262,9 +269,9 @@ const Chat = () => {
             return;
         }
 
-        if (file.size > 50 * 1024 * 1024) {
+        if (file.size > 500 * 1024 * 1024) {
             setErrorMessage(
-                'File size exceeds 50MB limit. Please choose a smaller file.'
+                'File size exceeds 500MB limit. Please choose a file up to 500MB.'
             );
 
             setShowErrorModal(true);
@@ -285,16 +292,19 @@ const Chat = () => {
         }
     };
 
-    const getFileIcon = (type) => {
-        if (type.startsWith('image/')) {
-            return <FaImage />;
+    const getFileIcon = (type, name = '') => {
+        const lowerType = (type || '').toLowerCase();
+        const lowerName = (name || '').toLowerCase();
+
+        if (lowerType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(lowerName)) {
+            return <FaImage className="text-info" />;
         }
 
-        if (type.startsWith('video/')) {
-            return <FaVideo />;
+        if (lowerType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(lowerName)) {
+            return <FaVideo className="text-danger" />;
         }
 
-        return <FaFile />;
+        return <FaFile className="text-secondary" />;
     };
 
     const getResourceUrl = (url) => {
@@ -500,45 +510,93 @@ const Chat = () => {
                                     </div>
                                 )}
 
-                                {msg.resourceUrl && (
-                                    <div className="message-resource">
-                                        {msg.resourceType ===
-                                        'image' ? (
-                                            <div className="image-preview">
-                                                <img
-                                                    src={
-                                                        resourceUrl
-                                                    }
-                                                    alt="Shared resource"
-                                                    className="img-fluid rounded"
-                                                />
-                                            </div>
-                                        ) : msg.resourceType ===
-                                          'video' ? (
-                                            <div className="video-preview">
-                                                <video
-                                                    src={
-                                                        resourceUrl
-                                                    }
-                                                    controls
-                                                    className="rounded"
-                                                />
-                                            </div>
-                                        ) : (
-                                            <a
-                                                href={
-                                                    resourceUrl
-                                                }
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="file-download"
-                                            >
-                                                <FaDownload className="me-2" />
-                                                Download Attachment
-                                            </a>
-                                        )}
-                                    </div>
-                                )}
+                                {msg.resourceUrl && (() => {
+                                    const isVideo = msg.resourceType === 'video' || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|flv|wmv)(\?.*)?$/i.test(resourceUrl);
+                                    const isAudio = msg.resourceType === 'audio' || /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(resourceUrl);
+                                    const isImage = msg.resourceType === 'image' || /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(resourceUrl);
+
+                                    return (
+                                        <div className="message-resource my-2">
+                                            {isImage ? (
+                                                <div className="image-preview">
+                                                    <img
+                                                        src={resourceUrl}
+                                                        alt="Shared image"
+                                                        className="img-fluid rounded"
+                                                        style={{ maxHeight: '350px' }}
+                                                    />
+                                                    <div className="mt-1">
+                                                        <a
+                                                            href={resourceUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            download
+                                                            className="file-download btn btn-sm btn-light border py-1 px-2"
+                                                        >
+                                                            <FaDownload className="me-1" /> Download Image
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            ) : isVideo ? (
+                                                <div className="video-preview" style={{ maxWidth: '400px' }}>
+                                                    <video
+                                                        src={resourceUrl}
+                                                        controls
+                                                        preload="metadata"
+                                                        className="rounded w-100 shadow-sm"
+                                                        style={{ maxHeight: '360px', backgroundColor: '#000' }}
+                                                    />
+                                                    <div className="mt-1">
+                                                        <a
+                                                            href={resourceUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            download
+                                                            className="file-download btn btn-sm btn-light border py-1 px-2"
+                                                        >
+                                                            <FaDownload className="me-1" /> Download Video
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            ) : isAudio ? (
+                                                <div className="audio-preview" style={{ maxWidth: '350px' }}>
+                                                    <audio src={resourceUrl} controls className="w-100" />
+                                                    <div className="mt-1">
+                                                        <a
+                                                            href={resourceUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            download
+                                                            className="file-download btn btn-sm btn-light border py-1 px-2"
+                                                        >
+                                                            <FaDownload className="me-1" /> Download Audio
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="file-preview">
+                                                    <a
+                                                        href={resourceUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        download
+                                                        className="file-download btn btn-light border d-inline-flex align-items-center py-2 px-3 rounded-3"
+                                                    >
+                                                        <FaFile className="me-2 text-primary" size={22} />
+                                                        <div className="text-start">
+                                                            <div className="fw-semibold text-dark text-truncate" style={{ maxWidth: '220px' }}>
+                                                                {resourceUrl.split('/').pop()}
+                                                            </div>
+                                                            <small className="text-muted">
+                                                                <FaDownload className="me-1" /> Download File
+                                                            </small>
+                                                        </div>
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="message-time">
                                     {new Date(
@@ -581,51 +639,92 @@ const Chat = () => {
                         </div>
 
                         {resourceFile && (
-                            <div className="selected-file mb-3 p-2 bg-light rounded d-flex align-items-center">
+                            <div className="selected-file mb-3 p-2 bg-light rounded border d-flex align-items-center">
                                 {getFileIcon(
-                                    resourceFile.type
+                                    resourceFile.type,
+                                    resourceFile.name
                                 )}
 
-                                <span className="ms-2">
+                                <span className="ms-2 fw-semibold text-truncate" style={{ maxWidth: '280px' }}>
                                     {resourceFile.name}
                                 </span>
+
+                                <small className="text-muted ms-2">
+                                    ({(resourceFile.size / (1024 * 1024)).toFixed(2)} MB)
+                                </small>
 
                                 <button
                                     type="button"
                                     className="btn btn-link text-danger ms-auto p-0"
                                     onClick={removeFile}
+                                    title="Remove file"
                                 >
                                     <FaTimes />
                                 </button>
                             </div>
                         )}
 
-                        <div className="d-flex justify-content-between align-items-center">
-                            <div className="d-flex align-items-center">
+                        {sending && uploadProgress > 0 && (
+                            <div className="mb-3">
+                                <div className="d-flex justify-content-between small text-muted mb-1">
+                                    <span>Uploading file / video...</span>
+                                    <span>{uploadProgress}%</span>
+                                </div>
+                                <div className="progress" style={{ height: '8px' }}>
+                                    <div
+                                        className="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                                        role="progressbar"
+                                        style={{ width: `${uploadProgress}%` }}
+                                        aria-valuenow={uploadProgress}
+                                        aria-valuemin="0"
+                                        aria-valuemax="100"
+                                    ></div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div className="d-flex align-items-center gap-2">
+                                {/* General file input (all types supported: zip, pdf, docs, code, audio, etc.) */}
                                 <input
                                     ref={fileInputRef}
                                     type="file"
-                                    onChange={
-                                        handleFileChange
-                                    }
-                                    accept="image/*,video/*,.pdf,.doc,.docx"
+                                    onChange={handleFileChange}
+                                    accept="*"
                                     className="d-none"
                                     id="file-input"
                                 />
 
+                                {/* Dedicated video file input */}
+                                <input
+                                    ref={videoInputRef}
+                                    type="file"
+                                    onChange={handleFileChange}
+                                    accept="video/*"
+                                    className="d-none"
+                                    id="video-input"
+                                />
+
                                 <button
                                     type="button"
-                                    className="btn btn-outline-secondary me-2"
-                                    onClick={() =>
-                                        fileInputRef.current?.click()
-                                    }
+                                    className="btn btn-outline-primary btn-sm d-flex align-items-center"
+                                    onClick={() => videoInputRef.current?.click()}
+                                    title="Upload and send video (MP4, WebM, MOV, etc.)"
                                 >
-                                    <FaPaperclip /> Attach
-                                    File
+                                    <FaVideo className="me-1" /> Video
                                 </button>
 
-                                <small className="text-muted">
-                                    Max: 50MB
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    title="Upload any file (PDF, ZIP, DOC, code, audio, etc.)"
+                                >
+                                    <FaPaperclip className="me-1" /> Any File
+                                </button>
+
+                                <small className="text-muted d-none d-sm-inline">
+                                    Max: 500MB (all types supported)
                                 </small>
                             </div>
 

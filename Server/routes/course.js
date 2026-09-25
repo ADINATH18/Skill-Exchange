@@ -8,26 +8,30 @@ const router = express.Router();
 
 router.post('/create', verifyToken, async (req, res) => {
     try {
-        const { name, skills, duration, imageUrl } = req.body;
+        const { name, skills, duration, imageUrl, videoUrl, description } = req.body;
 
         if (
             !name ||
             !Array.isArray(skills) ||
             skills.length === 0 ||
-            !duration ||
-            !imageUrl
+            !duration
         ) {
             return res.status(400).json({
                 message:
-                    'Please provide course name, skills, duration and image.'
+                    'Please provide course name, skills, and duration.'
             });
         }
+
+        const defaultCover = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80';
+        const finalImageUrl = imageUrl && imageUrl.trim() ? imageUrl.trim() : defaultCover;
 
         const course = new Course({
             name,
             skills,
             duration,
-            imageUrl,
+            imageUrl: finalImageUrl,
+            videoUrl: videoUrl || '',
+            description: description || '',
             author: req.user._id,
             authorName: req.user.name
         });
@@ -590,10 +594,10 @@ router.put('/:courseId/progress', verifyToken, async (req, res) => {
     }
 });
 
-// Add or update course modules (for instructor)
+// Add or update course modules and course video (for instructor)
 router.put('/:courseId/modules', verifyToken, async (req, res) => {
     try {
-        const { modules } = req.body;
+        const { modules, videoUrl, description } = req.body;
         const course = await Course.findById(req.params.courseId);
 
         if (!course) {
@@ -605,12 +609,27 @@ router.put('/:courseId/modules', verifyToken, async (req, res) => {
             return res.status(403).json({ message: 'Only the course instructor can update modules' });
         }
 
-        course.modules = Array.isArray(modules) ? modules : [];
+        if (Array.isArray(modules)) {
+            course.modules = modules.map(m => ({
+                title: m.title || 'Untitled Module',
+                description: m.description || '',
+                videoUrl: m.videoUrl || ''
+            }));
+        }
+
+        if (videoUrl !== undefined) {
+            course.videoUrl = videoUrl;
+        }
+
+        if (description !== undefined) {
+            course.description = description;
+        }
+
         await course.save();
 
         res.json({
-            message: 'Modules updated successfully',
-            modules: course.modules
+            message: 'Course content updated successfully',
+            course
         });
     } catch (error) {
         console.error('Update modules error:', error);

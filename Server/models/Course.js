@@ -18,6 +18,10 @@ const courseSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    videoUrl: {
+        type: String,
+        default: ''
+    },
     author: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -41,6 +45,10 @@ const courseSchema = new mongoose.Schema({
             required: true
         },
         description: {
+            type: String,
+            default: ''
+        },
+        videoUrl: {
             type: String,
             default: ''
         }

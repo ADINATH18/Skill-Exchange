@@ -24,33 +24,25 @@ const storage = multer.diskStorage({
     filename: function (req, file, cb) {
         // Generate unique filename with original name and proper extension
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const extension = mime.extension(file.mimetype) || path.extname(file.originalname).slice(1);
-        const safeFileName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
-        const baseName = path.basename(safeFileName, path.extname(safeFileName));
+        const originalExt = path.extname(file.originalname).slice(1);
+        const mimeExt = mime.extension(file.mimetype);
+        const extension = originalExt || mimeExt || 'bin';
+        const safeFileName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const baseName = path.basename(safeFileName, path.extname(safeFileName)) || 'file';
         cb(null, `${baseName}-${uniqueSuffix}.${extension}`);
     }
 });
 
+// Allow all file types (videos, images, audio, documents, archives, code, spreadsheets, presentations, etc.)
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = [
-        'image/jpeg', 'image/png', 'image/gif',
-        'video/mp4', 'video/quicktime',
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    ];
-    
-    if (allowedTypes.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error(`Invalid file type: ${file.mimetype}. Allowed types: JPG, PNG, GIF, MP4, PDF, DOC, DOCX`));
-    }
+    // Permit any valid file upload
+    cb(null, true);
 };
 
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
+        fileSize: 500 * 1024 * 1024 // 500MB limit for large files and videos
     },
     fileFilter: fileFilter
 });
@@ -75,7 +67,7 @@ const handleUpload = async (req, res) => {
         // Return the file URL
         const fileUrl = `/uploads/${filename}`;
         
-        // Set proper content type for the response
+        // Return file details
         res.json({ 
             url: fileUrl,
             filename: filename,
@@ -87,7 +79,7 @@ const handleUpload = async (req, res) => {
         console.error('File upload error:', error);
         if (error instanceof multer.MulterError) {
             if (error.code === 'LIMIT_FILE_SIZE') {
-                return res.status(400).json({ message: 'File is too large. Maximum size is 5MB.' });
+                return res.status(400).json({ message: 'File is too large. Maximum size is 500MB.' });
             }
             return res.status(400).json({ message: `Upload error: ${error.message}` });
         }
