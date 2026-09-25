@@ -71,7 +71,7 @@ const Dashboard = () => {
         try {
             const [coursesRes, myCoursesRes, enrolledRes, myRequestsRes] = await Promise.all([
                 axios.get(`${API_URL}/api/courses/search`, {
-                    params: { skill: searchSkill },
+                    params: { skill: searchSkill, query: searchSkill },
                     headers: { Authorization: `Bearer ${token}` }
                 }),
                 axios.get(`${API_URL}/api/courses/my-courses`, {
@@ -215,11 +215,18 @@ const Dashboard = () => {
     ];
 
     const filteredCourses = (courses || []).filter(course => {
-        const matchesSkill =
-            !searchSkill.trim() ||
+        const query = (searchSkill || '').trim().toLowerCase();
+
+        const matchesSearch =
+            !query ||
             (course.skills || []).some(skill =>
-                skill.toLowerCase().includes(searchSkill.toLowerCase())
-            );
+                (skill || '').toLowerCase().includes(query)
+            ) ||
+            ((course.name || '').toLowerCase().includes(query)) ||
+            ((course.authorName || '').toLowerCase().includes(query)) ||
+            ((course.author?.name || '').toLowerCase().includes(query)) ||
+            ((course.author?.email || '').toLowerCase().includes(query)) ||
+            ((course.description || '').toLowerCase().includes(query));
 
         const matchesCategory =
             selectedCategory === 'all' ||
@@ -229,7 +236,7 @@ const Dashboard = () => {
             selectedLevel === 'all' ||
             course.level === selectedLevel;
 
-        return matchesSkill && matchesCategory && matchesLevel;
+        return matchesSearch && matchesCategory && matchesLevel;
     });
 
     const handleEnrollRequest = async (courseId) => {
@@ -633,8 +640,8 @@ const Dashboard = () => {
 
                         <input
                             type="text"
-                            className="form-control form-control-lg ps-5"
-                            placeholder="What do you want to learn? Enter skills..."
+                            className="form-control form-control-lg ps-5 pe-5"
+                            placeholder="Search by instructor name, course, or skills..."
                             value={searchSkill}
                             onChange={(e) =>
                                 setSearchSkill(e.target.value)
@@ -644,7 +651,45 @@ const Dashboard = () => {
                             }}
                         />
 
+                        {searchSkill && (
+                            <button
+                                type="button"
+                                className="btn btn-sm btn-link text-muted position-absolute"
+                                style={{
+                                    right: '15px',
+                                    top: '50%',
+                                    transform: 'translateY(-50%)',
+                                    textDecoration: 'none',
+                                    fontWeight: 'bold'
+                                }}
+                                onClick={() => setSearchSkill('')}
+                                title="Clear search"
+                            >
+                                ✕
+                            </button>
+                        )}
+
                     </div>
+
+                    {searchSkill.trim() && (
+                        <div className="search-status-bar d-flex justify-content-between align-items-center mb-3 p-3 bg-white border border-primary rounded-3 shadow-xs">
+                            <div className="d-flex align-items-center">
+                                <FaSearch className="text-primary me-2" />
+                                <span>
+                                    Showing courses taught by instructor or matching: <strong className="text-primary">"{searchSkill}"</strong>
+                                </span>
+                                <span className="badge bg-primary ms-2">
+                                    {filteredCourses.length} {filteredCourses.length === 1 ? 'course' : 'courses'} found
+                                </span>
+                            </div>
+                            <button
+                                className="btn btn-sm btn-outline-secondary"
+                                onClick={() => setSearchSkill('')}
+                            >
+                                Reset Search
+                            </button>
+                        </div>
+                    )}
 
                     {showFilters && (
                         <div className="filter-section p-3 bg-white rounded shadow-sm mb-4">
@@ -950,6 +995,11 @@ const Dashboard = () => {
 
                                                         </div>
 
+                                                        <div className="instructor-info d-flex align-items-center mb-2 px-2 py-1 bg-light rounded border text-muted small">
+                                                            <FaChalkboardTeacher className="me-2 text-primary" size={15} />
+                                                            <span>Taught by: <strong className="text-dark">{course.authorName || course.author?.name || 'Instructor'}</strong></span>
+                                                        </div>
+
                                                         <p className="card-text text-muted">
                                                             {course.description}
                                                         </p>
@@ -1154,6 +1204,11 @@ const Dashboard = () => {
                                                                 Enrolled
                                                             </span>
 
+                                                        </div>
+
+                                                        <div className="instructor-info d-flex align-items-center mb-2 px-2 py-1 bg-light rounded border text-muted small">
+                                                            <FaChalkboardTeacher className="me-2 text-primary" size={15} />
+                                                            <span>Instructor: <strong className="text-dark">{course.authorName || course.author?.name || 'Instructor'}</strong></span>
                                                         </div>
 
                                                         <p className="card-text text-muted">

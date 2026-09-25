@@ -90,4 +90,63 @@ const handleUpload = async (req, res) => {
 // File upload endpoint
 router.post('/', verifyToken, handleUpload);
 
+// Download file endpoint with proper attachment header
+router.get('/download/:filename', (req, res) => {
+    try {
+        const rawFilename = path.basename(req.params.filename);
+        const filePath = path.join(__dirname, '..', 'uploads', rawFilename);
+
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ message: 'File not found' });
+        }
+
+        const downloadName = req.query.name || rawFilename;
+        res.download(filePath, downloadName);
+    } catch (error) {
+        console.error('File download error:', error);
+        res.status(500).json({ message: error.message || 'Error downloading file' });
+    }
+});
+
+// Read file endpoint for inline preview and text-based files
+router.get('/read/:filename', (req, res) => {
+    try {
+        const rawFilename = path.basename(req.params.filename);
+        const filePath = path.join(__dirname, '..', 'uploads', rawFilename);
+
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ message: 'File not found' });
+        }
+
+        const ext = path.extname(rawFilename).toLowerCase();
+        const textExtensions = [
+            '.txt', '.md', '.markdown', '.json', '.csv', '.tsv', 
+            '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.c', 
+            '.cpp', '.cs', '.html', '.css', '.scss', '.xml', 
+            '.yaml', '.yml', '.sql', '.log', '.sh', '.bat', '.env'
+        ];
+
+        if (textExtensions.includes(ext)) {
+            const content = fs.readFileSync(filePath, 'utf-8');
+            const stats = fs.statSync(filePath);
+            return res.json({
+                filename: rawFilename,
+                isText: true,
+                size: stats.size,
+                extension: ext,
+                content
+            });
+        }
+
+        // For PDF or other files, serve with inline disposition
+        const detectedMime = mime.lookup(filePath) || 'application/octet-stream';
+        res.setHeader('Content-Type', detectedMime);
+        res.setHeader('Content-Disposition', 'inline');
+        res.sendFile(filePath);
+    } catch (error) {
+        console.error('File read error:', error);
+        res.status(500).json({ message: error.message || 'Error reading file' });
+    }
+});
+
 export default router; 

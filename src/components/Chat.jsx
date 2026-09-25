@@ -13,7 +13,17 @@ import {
     FaTimes,
     FaVideo,
     FaTrash,
-    FaSync
+    FaSync,
+    FaEye,
+    FaFileAlt,
+    FaFilePdf,
+    FaFileCode,
+    FaFileArchive,
+    FaExternalLinkAlt,
+    FaCopy,
+    FaCheck,
+    FaChalkboardTeacher,
+    FaBookOpen
 } from 'react-icons/fa';
 import VideoCall from './VideoCall';
 
@@ -37,6 +47,22 @@ const Chat = () => {
     const [errorMessage, setErrorMessage] = useState('');
     const [showVideoCall, setShowVideoCall] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
+
+    // Download & File Reader state
+    const [downloadingUrl, setDownloadingUrl] = useState(null);
+    const [readerModalOpen, setReaderModalOpen] = useState(false);
+    const [activeReader, setActiveReader] = useState({
+        url: '',
+        name: '',
+        type: '',
+        isFromInstructor: false,
+        size: 0,
+        isText: false,
+        textContent: '',
+        loading: false,
+        error: ''
+    });
+    const [copiedText, setCopiedText] = useState(false);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -201,13 +227,15 @@ const Chat = () => {
 
                     resourceUrl = `${API_URL}${uploadResponse.data.url}`;
                     const mimeType = (resourceFile.type || '').toLowerCase();
-                    const fileName = (resourceFile.name || '').toLowerCase();
+                    const rawFileName = (resourceFile.name || '').toLowerCase();
+                    var uploadedOriginalName = uploadResponse.data.originalName || resourceFile.name || '';
+                    var uploadedFileSize = uploadResponse.data.size || resourceFile.size || 0;
 
-                    if (mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(fileName)) {
+                    if (mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(rawFileName)) {
                         resourceType = 'image';
-                    } else if (mimeType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|flv|wmv)$/i.test(fileName)) {
+                    } else if (mimeType.startsWith('video/') || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|flv|wmv)$/i.test(rawFileName)) {
                         resourceType = 'video';
-                    } else if (mimeType.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) {
+                    } else if (mimeType.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(rawFileName)) {
                         resourceType = 'audio';
                     } else {
                         resourceType = 'document';
@@ -233,7 +261,11 @@ const Chat = () => {
                     resourceUrl:
                         resourceUrl || undefined,
                     resourceType:
-                        resourceType || undefined
+                        resourceType || undefined,
+                    fileName:
+                        uploadedOriginalName || undefined,
+                    fileSize:
+                        uploadedFileSize || undefined
                 },
                 {
                     headers: {
@@ -315,6 +347,149 @@ const Chat = () => {
         return url.startsWith('http')
             ? url
             : `${API_URL}${url}`;
+    };
+
+    const getDocumentIcon = (fileName = '', type = '') => {
+        const ext = '.' + (fileName.split('.').pop() || '').toLowerCase();
+        if (ext === '.pdf' || type === 'pdf') {
+            return <FaFilePdf className="text-danger" size={26} />;
+        }
+        if (['.js', '.jsx', '.ts', '.tsx', '.py', '.html', '.css', '.json', '.xml', '.sql', '.cpp', '.c', '.java'].includes(ext)) {
+            return <FaFileCode className="text-info" size={26} />;
+        }
+        if (['.zip', '.rar', '.7z', '.tar', '.gz'].includes(ext)) {
+            return <FaFileArchive className="text-warning" size={26} />;
+        }
+        if (['.txt', '.md', '.markdown', '.doc', '.docx', '.rtf', '.csv'].includes(ext)) {
+            return <FaFileAlt className="text-primary" size={26} />;
+        }
+        return <FaFile className="text-secondary" size={26} />;
+    };
+
+    const formatFileSize = (bytes) => {
+        if (!bytes || bytes <= 0) return '';
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${parseFloat((bytes / Math.pow(1024, i)).toFixed(1))} ${sizes[i]}`;
+    };
+
+    const handleDownloadFile = async (resourceUrl, targetFileName) => {
+        try {
+            setDownloadingUrl(resourceUrl);
+            const rawFilename = resourceUrl.split('/').pop().split('?')[0];
+            const cleanName = targetFileName || rawFilename || 'downloaded-file';
+            const downloadApiUrl = `${API_URL}/api/upload/download/${rawFilename}?name=${encodeURIComponent(cleanName)}`;
+
+            // 1. Try fetching as Blob for guaranteed local disk save
+            try {
+                const response = await fetch(downloadApiUrl);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const tempLink = document.createElement('a');
+                    tempLink.href = blobUrl;
+                    tempLink.setAttribute('download', cleanName);
+                    document.body.appendChild(tempLink);
+                    tempLink.click();
+                    document.body.removeChild(tempLink);
+                    window.URL.revokeObjectURL(blobUrl);
+                    return;
+                }
+            } catch (blobErr) {
+                console.warn('Blob download fetch error, trying direct anchor:', blobErr);
+            }
+
+            // 2. Direct anchor download fallback
+            const tempLink = document.createElement('a');
+            tempLink.href = downloadApiUrl;
+            tempLink.setAttribute('download', cleanName);
+            tempLink.target = '_blank';
+            document.body.appendChild(tempLink);
+            tempLink.click();
+            document.body.removeChild(tempLink);
+        } catch (err) {
+            console.error('Download error:', err);
+            window.open(resourceUrl, '_blank');
+        } finally {
+            setDownloadingUrl(null);
+        }
+    };
+
+    const handleReadFile = async (resourceUrl, fileName, resourceType, isFromInstructor, fileSize = 0) => {
+        const rawFilename = resourceUrl.split('/').pop().split('?')[0];
+        const cleanName = fileName || rawFilename || 'Document';
+        const ext = '.' + (cleanName.split('.').pop() || '').toLowerCase();
+        const isPdf = ext === '.pdf' || resourceType === 'pdf';
+        const isImage = /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(cleanName) || resourceType === 'image';
+        const isVideo = /\.(mp4|webm|mov|mkv|avi|m4v|3gp|flv|wmv)$/i.test(cleanName) || resourceType === 'video';
+        const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(cleanName) || resourceType === 'audio';
+        const textExtensions = [
+            '.txt', '.md', '.markdown', '.json', '.csv', '.tsv', 
+            '.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.c', 
+            '.cpp', '.cs', '.html', '.css', '.scss', '.xml', 
+            '.yaml', '.yml', '.sql', '.log', '.sh', '.bat', '.env'
+        ];
+        const isText = textExtensions.includes(ext);
+
+        setActiveReader({
+            url: resourceUrl,
+            name: cleanName,
+            type: isPdf ? 'pdf' : isImage ? 'image' : isVideo ? 'video' : isAudio ? 'audio' : isText ? 'text' : 'binary',
+            isFromInstructor,
+            size: fileSize,
+            isText,
+            textContent: '',
+            loading: isText,
+            error: ''
+        });
+        setReaderModalOpen(true);
+        setCopiedText(false);
+
+        if (isText) {
+            try {
+                const res = await axios.get(`${API_URL}/api/upload/read/${rawFilename}`);
+                if (res.data && res.data.content !== undefined) {
+                    setActiveReader(prev => ({
+                        ...prev,
+                        textContent: res.data.content,
+                        loading: false
+                    }));
+                } else {
+                    const textRes = await fetch(resourceUrl);
+                    const text = await textRes.text();
+                    setActiveReader(prev => ({
+                        ...prev,
+                        textContent: text,
+                        loading: false
+                    }));
+                }
+            } catch (err) {
+                console.error('Error reading text file content:', err);
+                try {
+                    const fallbackRes = await fetch(resourceUrl);
+                    const text = await fallbackRes.text();
+                    setActiveReader(prev => ({
+                        ...prev,
+                        textContent: text,
+                        loading: false
+                    }));
+                } catch (fallbackErr) {
+                    setActiveReader(prev => ({
+                        ...prev,
+                        loading: false,
+                        error: 'Could not render file directly in the browser reader. Please use the Download button below to open and read it.'
+                    }));
+                }
+            }
+        }
+    };
+
+    const handleCopyContent = () => {
+        if (activeReader.textContent) {
+            navigator.clipboard.writeText(activeReader.textContent);
+            setCopiedText(true);
+            setTimeout(() => setCopiedText(false), 2500);
+        }
     };
 
     if (loading) {
@@ -514,84 +689,144 @@ const Chat = () => {
                                     const isVideo = msg.resourceType === 'video' || /\.(mp4|webm|mov|mkv|avi|m4v|3gp|flv|wmv)(\?.*)?$/i.test(resourceUrl);
                                     const isAudio = msg.resourceType === 'audio' || /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(resourceUrl);
                                     const isImage = msg.resourceType === 'image' || /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(resourceUrl);
+                                    const displayName = msg.fileName || resourceUrl.split('/').pop().split('?')[0] || 'Attachment';
+                                    const isDownloading = downloadingUrl === resourceUrl;
 
                                     return (
                                         <div className="message-resource my-2">
+                                            {/* Prominent badge when file is sent by instructor */}
+                                            {isInstructorMessage && (
+                                                <div className="instructor-file-badge mb-2 d-inline-flex align-items-center px-2 py-1 bg-white text-primary border border-primary rounded-pill small shadow-xs">
+                                                    <FaChalkboardTeacher className="me-1" />
+                                                    <strong>Instructor Learning Material</strong>
+                                                </div>
+                                            )}
+
                                             {isImage ? (
-                                                <div className="image-preview">
+                                                <div className="image-attachment-card p-2 bg-white rounded-3 border text-dark shadow-xs" style={{ maxWidth: '380px' }}>
                                                     <img
                                                         src={resourceUrl}
-                                                        alt="Shared image"
-                                                        className="img-fluid rounded"
-                                                        style={{ maxHeight: '350px' }}
+                                                        alt={displayName}
+                                                        className="img-fluid rounded mb-2 w-100"
+                                                        style={{ maxHeight: '280px', objectFit: 'cover', cursor: 'pointer' }}
+                                                        onClick={() => handleReadFile(resourceUrl, displayName, 'image', isInstructorMessage, msg.fileSize)}
+                                                        title="Click to view full size"
                                                     />
-                                                    <div className="mt-1">
-                                                        <a
-                                                            href={resourceUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            download
-                                                            className="file-download btn btn-sm btn-light border py-1 px-2"
-                                                        >
-                                                            <FaDownload className="me-1" /> Download Image
-                                                        </a>
+                                                    <div className="d-flex justify-content-between align-items-center pt-1 border-top">
+                                                        <small className="text-truncate text-muted me-2" style={{ maxWidth: '160px' }} title={displayName}>
+                                                            {displayName}
+                                                        </small>
+                                                        <div className="d-flex gap-1">
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm btn-outline-primary py-0 px-2 d-flex align-items-center"
+                                                                onClick={() => handleReadFile(resourceUrl, displayName, 'image', isInstructorMessage, msg.fileSize)}
+                                                            >
+                                                                <FaEye className="me-1" /> View
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="btn btn-sm btn-primary py-0 px-2 d-flex align-items-center"
+                                                                onClick={() => handleDownloadFile(resourceUrl, displayName)}
+                                                                disabled={isDownloading}
+                                                            >
+                                                                <FaDownload className="me-1" /> {isDownloading ? 'Saving...' : 'Download'}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ) : isVideo ? (
-                                                <div className="video-preview" style={{ maxWidth: '400px' }}>
+                                                <div className="video-attachment-card p-2 bg-white rounded-3 border text-dark shadow-xs" style={{ maxWidth: '420px' }}>
                                                     <video
                                                         src={resourceUrl}
                                                         controls
                                                         preload="metadata"
-                                                        className="rounded w-100 shadow-sm"
-                                                        style={{ maxHeight: '360px', backgroundColor: '#000' }}
+                                                        className="rounded w-100 shadow-xs mb-2"
+                                                        style={{ maxHeight: '300px', backgroundColor: '#000' }}
                                                     />
-                                                    <div className="mt-1">
-                                                        <a
-                                                            href={resourceUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            download
-                                                            className="file-download btn btn-sm btn-light border py-1 px-2"
+                                                    <div className="d-flex justify-content-between align-items-center pt-1 border-top">
+                                                        <small className="text-truncate text-muted me-2" style={{ maxWidth: '200px' }} title={displayName}>
+                                                            {displayName} {msg.fileSize ? `(${formatFileSize(msg.fileSize)})` : ''}
+                                                        </small>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-primary py-1 px-3 d-flex align-items-center"
+                                                            onClick={() => handleDownloadFile(resourceUrl, displayName)}
+                                                            disabled={isDownloading}
                                                         >
-                                                            <FaDownload className="me-1" /> Download Video
-                                                        </a>
+                                                            <FaDownload className="me-1" /> {isDownloading ? 'Saving...' : 'Download Video'}
+                                                        </button>
                                                     </div>
                                                 </div>
                                             ) : isAudio ? (
-                                                <div className="audio-preview" style={{ maxWidth: '350px' }}>
-                                                    <audio src={resourceUrl} controls className="w-100" />
-                                                    <div className="mt-1">
+                                                <div className="audio-attachment-card p-2 bg-white rounded-3 border text-dark shadow-xs" style={{ maxWidth: '360px' }}>
+                                                    <audio src={resourceUrl} controls className="w-100 mb-2" />
+                                                    <div className="d-flex justify-content-between align-items-center pt-1 border-top">
+                                                        <small className="text-truncate text-muted me-2" style={{ maxWidth: '180px' }} title={displayName}>
+                                                            {displayName}
+                                                        </small>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-sm btn-primary py-0 px-2 d-flex align-items-center"
+                                                            onClick={() => handleDownloadFile(resourceUrl, displayName)}
+                                                            disabled={isDownloading}
+                                                        >
+                                                            <FaDownload className="me-1" /> Download
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                /* Documents & All file types (PDF, Code, Text, Archives, etc.) */
+                                                <div className="file-attachment-card bg-white text-dark rounded-3 p-3 border shadow-sm" style={{ maxWidth: '380px' }}>
+                                                    <div className="d-flex align-items-start mb-2">
+                                                        <div className="me-3 mt-1 p-2 bg-light rounded-3 border">
+                                                            {getDocumentIcon(displayName, msg.resourceType)}
+                                                        </div>
+                                                        <div className="flex-grow-1 overflow-hidden">
+                                                            <h6 className="fw-bold mb-0 text-truncate text-dark" title={displayName}>
+                                                                {displayName}
+                                                            </h6>
+                                                            <div className="d-flex align-items-center gap-2 mt-1">
+                                                                {msg.fileSize ? (
+                                                                    <span className="badge bg-light text-muted border">
+                                                                        {formatFileSize(msg.fileSize)}
+                                                                    </span>
+                                                                ) : null}
+                                                                <span className="badge bg-primary-subtle text-primary border">
+                                                                    {(displayName.split('.').pop() || 'FILE').toUpperCase()}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="d-flex gap-2 mt-2 pt-2 border-top">
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-primary btn-sm flex-grow-1 d-flex align-items-center justify-content-center fw-semibold shadow-xs"
+                                                            onClick={() => handleReadFile(resourceUrl, displayName, msg.resourceType, isInstructorMessage, msg.fileSize)}
+                                                            title="Read or preview this document inside the browser"
+                                                        >
+                                                            <FaEye className="me-1" /> Read / View
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-success btn-sm flex-grow-1 d-flex align-items-center justify-content-center fw-semibold shadow-xs"
+                                                            onClick={() => handleDownloadFile(resourceUrl, displayName)}
+                                                            disabled={isDownloading}
+                                                            title="Download file to your computer"
+                                                        >
+                                                            <FaDownload className="me-1" /> {isDownloading ? 'Saving...' : 'Download'}
+                                                        </button>
                                                         <a
                                                             href={resourceUrl}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            download
-                                                            className="file-download btn btn-sm btn-light border py-1 px-2"
+                                                            className="btn btn-outline-secondary btn-sm px-2 d-flex align-items-center"
+                                                            title="Open in new window"
                                                         >
-                                                            <FaDownload className="me-1" /> Download Audio
+                                                            <FaExternalLinkAlt />
                                                         </a>
                                                     </div>
-                                                </div>
-                                            ) : (
-                                                <div className="file-preview">
-                                                    <a
-                                                        href={resourceUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        download
-                                                        className="file-download btn btn-light border d-inline-flex align-items-center py-2 px-3 rounded-3"
-                                                    >
-                                                        <FaFile className="me-2 text-primary" size={22} />
-                                                        <div className="text-start">
-                                                            <div className="fw-semibold text-dark text-truncate" style={{ maxWidth: '220px' }}>
-                                                                {resourceUrl.split('/').pop()}
-                                                            </div>
-                                                            <small className="text-muted">
-                                                                <FaDownload className="me-1" /> Download File
-                                                            </small>
-                                                        </div>
-                                                    </a>
                                                 </div>
                                             )}
                                         </div>
@@ -807,6 +1042,189 @@ const Chat = () => {
                 </Modal.Footer>
             </Modal>
 
+            {/* In-Browser Document & File Reader Modal */}
+            <Modal
+                show={readerModalOpen}
+                onHide={() => setReaderModalOpen(false)}
+                size="xl"
+                centered
+                dialogClassName="file-reader-modal"
+            >
+                <Modal.Header closeButton className="bg-light border-bottom">
+                    <div className="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden me-3">
+                        <div className="p-2 bg-white rounded border">
+                            {getDocumentIcon(activeReader.name, activeReader.type)}
+                        </div>
+                        <div className="overflow-hidden">
+                            <Modal.Title className="fs-5 text-truncate mb-0" title={activeReader.name}>
+                                {activeReader.name}
+                            </Modal.Title>
+                            <div className="d-flex align-items-center gap-2 small text-muted">
+                                {activeReader.isFromInstructor && (
+                                    <span className="badge bg-primary text-white">
+                                        <FaChalkboardTeacher className="me-1" /> Shared by Instructor
+                                    </span>
+                                )}
+                                {activeReader.size ? (
+                                    <span>Size: {formatFileSize(activeReader.size)}</span>
+                                ) : null}
+                                <span className="text-uppercase">({activeReader.type})</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="d-flex align-items-center gap-2 me-2">
+                        {activeReader.isText && activeReader.textContent && (
+                            <Button
+                                variant={copiedText ? "success" : "outline-secondary"}
+                                size="sm"
+                                onClick={handleCopyContent}
+                                className="d-flex align-items-center"
+                            >
+                                {copiedText ? <><FaCheck className="me-1" /> Copied!</> : <><FaCopy className="me-1" /> Copy Text</>}
+                            </Button>
+                        )}
+                        <Button
+                            variant="success"
+                            size="sm"
+                            onClick={() => handleDownloadFile(activeReader.url, activeReader.name)}
+                            className="d-flex align-items-center"
+                        >
+                            <FaDownload className="me-1" /> Download
+                        </Button>
+                    </div>
+                </Modal.Header>
+
+                <Modal.Body className="p-3" style={{ minHeight: '400px', maxHeight: '80vh', overflowY: 'auto' }}>
+                    {activeReader.type === 'pdf' ? (
+                        <div className="pdf-viewer-container w-100 rounded overflow-hidden shadow-sm" style={{ height: '70vh' }}>
+                            <iframe
+                                src={activeReader.url}
+                                title={activeReader.name}
+                                width="100%"
+                                height="100%"
+                                className="border-0 w-100 h-100"
+                                style={{ minHeight: '550px' }}
+                            />
+                        </div>
+                    ) : activeReader.isText ? (
+                        activeReader.loading ? (
+                            <div className="text-center py-5">
+                                <div className="spinner-border text-primary mb-3" role="status" />
+                                <h5>Loading document text...</h5>
+                            </div>
+                        ) : activeReader.error ? (
+                            <div className="alert alert-warning p-4 text-center">
+                                <FaExclamationTriangle size={36} className="text-warning mb-2" />
+                                <h5>Unable to preview file directly</h5>
+                                <p className="mb-3">{activeReader.error}</p>
+                                <Button
+                                    variant="primary"
+                                    onClick={() => handleDownloadFile(activeReader.url, activeReader.name)}
+                                >
+                                    <FaDownload className="me-2" /> Download File to Read
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="text-reader-container">
+                                <div className="d-flex justify-content-between align-items-center mb-2 px-1 text-muted small">
+                                    <span>
+                                        {activeReader.textContent.split('\n').length} lines | {activeReader.textContent.length} characters
+                                    </span>
+                                    <span>Document Reader</span>
+                                </div>
+                                <pre
+                                    className="bg-light p-3 rounded-3 border text-dark font-monospace"
+                                    style={{
+                                        maxHeight: '65vh',
+                                        overflowY: 'auto',
+                                        whiteSpace: 'pre-wrap',
+                                        wordBreak: 'break-word',
+                                        fontSize: '0.92rem',
+                                        lineHeight: '1.5'
+                                    }}
+                                >
+                                    {activeReader.textContent}
+                                </pre>
+                            </div>
+                        )
+                    ) : activeReader.type === 'image' ? (
+                        <div className="text-center py-2">
+                            <img
+                                src={activeReader.url}
+                                alt={activeReader.name}
+                                className="img-fluid rounded shadow-sm"
+                                style={{ maxHeight: '72vh', objectFit: 'contain' }}
+                            />
+                        </div>
+                    ) : activeReader.type === 'video' ? (
+                        <div className="text-center py-2">
+                            <video
+                                src={activeReader.url}
+                                controls
+                                autoPlay
+                                className="rounded shadow-sm w-100"
+                                style={{ maxHeight: '70vh', backgroundColor: '#000' }}
+                            />
+                        </div>
+                    ) : (
+                        <div className="binary-reader-placeholder text-center py-5">
+                            <div className="mb-3">
+                                {getDocumentIcon(activeReader.name, activeReader.type)}
+                            </div>
+                            <h4 className="fw-bold mb-2">{activeReader.name}</h4>
+                            <p className="text-muted mb-4" style={{ maxWidth: '450px', margin: '0 auto' }}>
+                                This file is ready to download. You can download and open it directly with your device's native application or open it in a new browser tab.
+                            </p>
+                            <div className="d-flex justify-content-center gap-3">
+                                <Button
+                                    variant="success"
+                                    size="lg"
+                                    onClick={() => handleDownloadFile(activeReader.url, activeReader.name)}
+                                    className="px-4 shadow-sm"
+                                >
+                                    <FaDownload className="me-2" /> Download File
+                                </Button>
+                                <a
+                                    href={activeReader.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-outline-primary btn-lg px-4"
+                                >
+                                    <FaExternalLinkAlt className="me-2" /> Open in New Tab
+                                </a>
+                            </div>
+                        </div>
+                    )}
+                </Modal.Body>
+
+                <Modal.Footer className="bg-light border-top d-flex justify-content-between">
+                    <a
+                        href={activeReader.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-outline-secondary btn-sm"
+                    >
+                        <FaExternalLinkAlt className="me-1" /> Open in New Tab
+                    </a>
+
+                    <div className="d-flex gap-2">
+                        <Button
+                            variant="success"
+                            onClick={() => handleDownloadFile(activeReader.url, activeReader.name)}
+                        >
+                            <FaDownload className="me-1" /> Download
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            onClick={() => setReaderModalOpen(false)}
+                        >
+                            Close
+                        </Button>
+                    </div>
+                </Modal.Footer>
+            </Modal>
+
             <style jsx>{`
                 .chat-container {
                     background-color: #f8f9fa;
@@ -956,6 +1374,24 @@ const Chat = () => {
                 .btn-secondary:hover {
                     background-color: #5a6268;
                     transform: translateY(-1px);
+                }
+
+                .file-attachment-card {
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                }
+
+                .file-attachment-card:hover {
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+                }
+
+                .instructor-file-badge {
+                    font-size: 0.78rem;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+                }
+
+                .shadow-xs {
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
                 }
             `}</style>
         </div>

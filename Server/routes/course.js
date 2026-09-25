@@ -50,19 +50,33 @@ router.post('/create', verifyToken, async (req, res) => {
 
 router.get('/search', async (req, res) => {
     try {
-        const skill = (req.query.skill || '').trim();
+        const query = (req.query.skill || req.query.query || req.query.search || req.query.instructor || '').trim();
 
-        const filter = skill
-            ? {
-                skills: {
-                    $regex: skill,
-                    $options: 'i'
-                }
-            }
-            : {};
+        let filter = {};
+        if (query) {
+            // Find users whose name or email matches query
+            const matchingUsers = await User.find({
+                $or: [
+                    { name: { $regex: query, $options: 'i' } },
+                    { email: { $regex: query, $options: 'i' } }
+                ]
+            }).select('_id');
+
+            const matchingUserIds = matchingUsers.map(u => u._id);
+
+            filter = {
+                $or: [
+                    { authorName: { $regex: query, $options: 'i' } },
+                    { author: { $in: matchingUserIds } },
+                    { skills: { $regex: query, $options: 'i' } },
+                    { name: { $regex: query, $options: 'i' } },
+                    { description: { $regex: query, $options: 'i' } }
+                ]
+            };
+        }
 
         const courses = await Course.find(filter)
-            .populate('author', 'name email')
+            .populate('author', 'name email role')
             .sort({ createdAt: -1 });
 
         res.json(courses);

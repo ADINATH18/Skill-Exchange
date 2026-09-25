@@ -339,12 +339,14 @@ router.post('/:chatId/message', verifyToken, async (req, res) => {
             return res.status(400).json({ message: 'Chat duration has expired' });
         }
 
-        const { content, resourceUrl, resourceType } = req.body;
+        const { content, resourceUrl, resourceType, fileName, fileSize } = req.body;
         chat.messages.push({
             sender: req.user._id,
             content,
             resourceUrl,
-            resourceType
+            resourceType,
+            fileName: fileName || '',
+            fileSize: fileSize || 0
         });
 
         await chat.save();
