@@ -31,6 +31,10 @@ const courseSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     },
+    description: {
+        type: String,
+        default: ''
+    },
     enrollments: [{
         student: {
             type: mongoose.Schema.Types.ObjectId,
@@ -42,7 +46,13 @@ const courseSchema = new mongoose.Schema({
             default: 'pending'
         },
         startDate: Date,
-        endDate: Date
+        endDate: Date,
+        progress: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 100
+        }
     }]
 });
 

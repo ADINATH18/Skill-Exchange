@@ -443,7 +443,18 @@ router.get(
                         createdAt: -1
                     });
 
-            res.json(courses);
+            const coursesWithProgress = courses.map(course => {
+                const c = course.toObject();
+                const enrollment = (c.enrollments || []).find(
+                    e => e.student && e.student.toString() === req.user._id.toString()
+                );
+                c.progress = enrollment?.progress || 0;
+                c.startDate = enrollment?.startDate;
+                c.endDate = enrollment?.endDate;
+                return c;
+            });
+
+            res.json(coursesWithProgress);
         } catch (error) {
             console.error(
                 'Enrolled courses error:',
@@ -517,5 +528,66 @@ router.get(
         }
     }
 );
+
+// Get single course details (for course learning page)
+router.get('/:courseId', verifyToken, async (req, res) => {
+    try {
+        const course = await Course.findById(req.params.courseId)
+            .populate('author', 'name email');
+
+        if (!course) {
+            return res.status(404).json({ message: 'Course not found' });
+        }
+
+        const enrollment = (course.enrollments || []).find(
+            e => e.student && e.student.toString() === req.user._id.toString()
+        );
+
+        const isAuthor = course.author._id.toString() === req.user._id.toString();
+        const isEnrolled = enrollment?.status === 'approved';
+
+        res.json({
+            course,
+            enrollment: enrollment || null,
+            isEnrolled,
+            isAuthor,
+            progress: enrollment?.progress || 0
+        });
+    } catch (error) {
+        console.error('Get single course error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+// Update student course progress
+router.put('/:courseId/progress', verifyToken, async (req, res) => {
+    try {
+        const { progress } = req.body;
+        const course = await Course.findById(req.params.courseId);
+
+        if (!course) {
+            return res.status(404).json({ message: 'Course not found' });
+        }
+
+        const enrollment = (course.enrollments || []).find(
+            e => e.student && e.student.toString() === req.user._id.toString()
+        );
+
+        if (!enrollment) {
+            return res.status(404).json({ message: 'You are not enrolled in this course' });
+        }
+
+        enrollment.progress = Math.min(100, Math.max(0, Math.round(Number(progress) || 0)));
+        await course.save();
+
+        res.json({
+            message: 'Progress updated successfully',
+            progress: enrollment.progress
+        });
+    } catch (error) {
+        console.error('Update progress error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
 
 export default router;

@@ -435,7 +435,7 @@ const Dashboard = () => {
                         <button
                             className="btn btn-outline-light me-2 d-flex align-items-center pulse-button"
                             onClick={() =>
-                                navigate('/instructor-chats')
+                                navigate('/messages')
                             }
                         >
                             <FaComments className="me-2" />
@@ -565,7 +565,7 @@ const Dashboard = () => {
                             <div
                                 className="quick-action-card"
                                 onClick={() =>
-                                    navigate('/instructor-chats')
+                                    navigate('/messages')
                                 }
                             >
                                 <FaComments className="quick-action-icon" />
@@ -732,6 +732,20 @@ const Dashboard = () => {
                             Teaching ({myCourses.length})
                         </button>
 
+                        <button
+                            className={`nav-link d-flex align-items-center ${
+                                activeTab === 'chats'
+                                    ? 'active'
+                                    : ''
+                            }`}
+                            onClick={() =>
+                                setActiveTab('chats')
+                            }
+                        >
+                            <FaComments className="me-1" />
+                            My Chats
+                        </button>
+
                         {allPendingRequests.length > 0 && (
                             <button
                                 className={`nav-link d-flex align-items-center ${
@@ -842,7 +856,7 @@ const Dashboard = () => {
                             </div>
                         )}
 
-                        {(searchSkill.trim() || activeTab === 'all') && activeTab !== 'requests' && (
+                        {(searchSkill.trim() || activeTab === 'all') && activeTab !== 'requests' && activeTab !== 'chats' && (
                             <div className="courses-section mb-5">
 
                                 <div className="section-header d-flex justify-content-between align-items-center mb-4">
@@ -1050,7 +1064,7 @@ const Dashboard = () => {
                             </div>
                         )}
 
-                        {activeTab !== 'teaching' && activeTab !== 'requests' && (
+                        {activeTab !== 'teaching' && activeTab !== 'requests' && activeTab !== 'chats' && (
                             <div className="courses-section mb-5">
 
                                 <div className="section-header d-flex justify-content-between align-items-center mb-4">
@@ -1146,16 +1160,31 @@ const Dashboard = () => {
                                                                 Progress
                                                             </span>
 
-                                                            <button
-                                                                className="btn btn-primary"
-                                                                onClick={() =>
-                                                                    navigate(
-                                                                        `/course/${course._id}`
-                                                                    )
-                                                                }
-                                                            >
-                                                                Continue Learning
-                                                            </button>
+                                                            <div className="d-flex gap-2">
+                                                                <button
+                                                                    className="btn btn-outline-primary d-flex align-items-center"
+                                                                    onClick={() =>
+                                                                        navigate(
+                                                                            `/chat/${course._id}`
+                                                                        )
+                                                                    }
+                                                                    title="Chat with instructor"
+                                                                >
+                                                                    <FaComments className="me-1" />
+                                                                    Chat
+                                                                </button>
+
+                                                                <button
+                                                                    className="btn btn-primary"
+                                                                    onClick={() =>
+                                                                        navigate(
+                                                                            `/course/${course._id}`
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Continue Learning
+                                                                </button>
+                                                            </div>
 
                                                         </div>
 
@@ -1205,7 +1234,7 @@ const Dashboard = () => {
                             </div>
                         )}
 
-                        {activeTab !== 'learning' && activeTab !== 'requests' && (
+                        {activeTab !== 'learning' && activeTab !== 'requests' && activeTab !== 'chats' && (
                             <div className="courses-section mb-5">
 
                                 <div className="section-header d-flex justify-content-between align-items-center mb-4">
@@ -1530,6 +1559,99 @@ const Dashboard = () => {
                                     )}
 
                                 </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'chats' && (
+                            <div className="courses-section mb-5">
+                                <div className="section-header d-flex justify-content-between align-items-center mb-4">
+                                    <div className="d-flex align-items-center">
+                                        <FaComments className="me-2 text-primary" size={24} />
+                                        <h2 className="mb-0">My Chats & Messages</h2>
+                                    </div>
+                                    <button
+                                        className="btn btn-primary btn-sm d-flex align-items-center"
+                                        onClick={() => navigate('/messages')}
+                                    >
+                                        <FaComments className="me-1" /> Full Message Center
+                                    </button>
+                                </div>
+
+                                <div className="mb-4">
+                                    <h4 className="text-dark fw-bold mb-3 d-flex align-items-center">
+                                        <FaGraduationCap className="me-2 text-primary" /> Learning Chats (with Instructors)
+                                    </h4>
+                                    {enrolledCourses.length > 0 ? (
+                                        <div className="row g-3">
+                                            {enrolledCourses.map((c) => (
+                                                <div key={`chat-tab-${c._id}`} className="col-md-6 col-lg-4">
+                                                    <div className="card shadow-sm border h-100 p-3" style={{ borderLeft: '4px solid #0d6efd' }}>
+                                                        <div className="d-flex justify-content-between align-items-start mb-2">
+                                                            <h5 className="text-primary fw-bold mb-1">{c.name}</h5>
+                                                            <span className="badge bg-success">Enrolled</span>
+                                                        </div>
+                                                        <p className="text-muted small mb-2">
+                                                            Instructor: <strong>{c.authorName || c.author?.name || 'Instructor'}</strong>
+                                                        </p>
+                                                        <div className="d-flex gap-2 mt-auto pt-2 border-top">
+                                                            <button
+                                                                className="btn btn-primary btn-sm flex-grow-1 d-flex align-items-center justify-content-center"
+                                                                onClick={() => navigate(`/chat/${c._id}`)}
+                                                            >
+                                                                <FaComments className="me-1" /> Open Chat
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-outline-secondary btn-sm"
+                                                                onClick={() => navigate(`/course/${c._id}`)}
+                                                                title="Continue Course"
+                                                            >
+                                                                Continue
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="alert alert-info text-center py-4">
+                                            <FaBook className="mb-2 text-primary" size={32} />
+                                            <h5>No Enrolled Courses Yet</h5>
+                                            <p className="mb-2">Enroll in courses to start chatting directly with instructors!</p>
+                                            <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('all')}>
+                                                Browse Courses
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {myCourses.length > 0 && (
+                                    <div className="mt-4 pt-3 border-top">
+                                        <h4 className="text-dark fw-bold mb-3 d-flex align-items-center">
+                                            <FaChalkboardTeacher className="me-2 text-success" /> Teaching Chats (with Students)
+                                        </h4>
+                                        <div className="row g-3">
+                                            {myCourses.map((c) => {
+                                                const approvedStudents = (c.enrollments || []).filter(e => e.status === 'approved');
+                                                return (
+                                                    <div key={`teach-tab-${c._id}`} className="col-md-6 col-lg-4">
+                                                        <div className="card shadow-sm border h-100 p-3" style={{ borderLeft: '4px solid #198754' }}>
+                                                            <h5 className="text-success fw-bold mb-1">{c.name}</h5>
+                                                            <p className="text-muted small mb-2">
+                                                                {approvedStudents.length} Active Student{approvedStudents.length !== 1 ? 's' : ''}
+                                                            </p>
+                                                            <button
+                                                                className="btn btn-outline-success btn-sm mt-auto"
+                                                                onClick={() => navigate('/messages')}
+                                                            >
+                                                                View Student Messages
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </>

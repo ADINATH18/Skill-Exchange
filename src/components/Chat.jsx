@@ -294,8 +294,8 @@ const Chat = () => {
 
                             <small className="text-muted">
                                 {isInstructorView
-                                    ? 'Student Chat'
-                                    : 'Instructor Chat'}
+                                    ? `Student Chat (${chat.student?.name || 'Student'})`
+                                    : `Instructor Chat (${chat.instructor?.name || 'Instructor'})`}
                             </small>
                         </div>
                     </div>
@@ -335,9 +335,9 @@ const Chat = () => {
                 style={{ overflowY: 'auto' }}
             >
                 {chat.messages.map((msg, index) => {
-                    const isInstructorMessage =
-                        msg.sender._id ===
-                        chat.instructor;
+                    const instructorId = (chat.instructor?._id || chat.instructor || '').toString();
+                    const senderId = (msg.sender?._id || msg.sender || '').toString();
+                    const isInstructorMessage = senderId === instructorId;
 
                     const resourceUrl =
                         getResourceUrl(
